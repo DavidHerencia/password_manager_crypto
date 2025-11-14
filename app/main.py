@@ -1,17 +1,17 @@
 import sys
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLineEdit, QLabel, QStackedWidget, QTableWidget,
-    QTableWidgetItem, QAbstractItemView, QHeaderView, QDialog,
-    QDialogButtonBox, QCheckBox, QSlider, QMessageBox
+    QPushButton, QLineEdit, QLabel, QStackedWidget, QListWidget,
+    QListWidgetItem, QAbstractItemView, QDialog, QDialogButtonBox,
+    QCheckBox, QSlider, QMessageBox
 )
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon, QAction
 
 # self modules
 import crypto_engine
 from crypto_engine import VAULT_EXISTS
-from style import get_stylesheet
+from style_v2 import get_stylesheet
 
 class PasswordGeneratorDialog(QDialog):
     def __init__(self, parent=None):
@@ -121,6 +121,59 @@ class AddEditDialog(QDialog):
             "username": self.username_input.text(),
             "password": self.password_input.text()
         }
+
+
+class CredentialCard(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("credentialCard")
+        self.service_text = ""
+        self.username_text = ""
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(6)
+
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(8)
+
+        self.badge_label = QLabel("⚡")
+        self.badge_label.setObjectName("cardBadge")
+        self.badge_label.setAlignment(Qt.AlignCenter)
+        header_layout.addWidget(self.badge_label)
+
+        self.service_label = QLabel()
+        self.service_label.setObjectName("cardService")
+        header_layout.addWidget(self.service_label, 1)
+
+        self.chip_label = QLabel("RETRO")
+        self.chip_label.setObjectName("cardChip")
+        header_layout.addWidget(self.chip_label)
+
+        layout.addLayout(header_layout)
+
+        self.username_label = QLabel()
+        self.username_label.setObjectName("cardUsername")
+        layout.addWidget(self.username_label)
+
+        self.password_label = QLabel()
+        self.password_label.setObjectName("cardPassword")
+        layout.addWidget(self.password_label)
+
+        self.setMinimumHeight(90)
+
+    def set_data(self, service, username, password):
+        self.service_text = service
+        self.username_text = username
+        badge_char = service[:1].upper() if service else "?"
+        self.badge_label.setText(badge_char)
+        self.service_label.setText(f"🪐 {service}")
+        chip_text = (service[:4] or "NEON").upper()
+        self.chip_label.setText(chip_text)
+        self.username_label.setText(f"👤 {username}")
+        masked_len = max(4, min(len(password), 10))
+        masked = "•" * masked_len
+        self.password_label.setText(f"🔑 {masked}")
 
 
 class MainWindow(QMainWindow):
@@ -280,42 +333,48 @@ class MainWindow(QMainWindow):
         # Panel izquierdo (Lista de Entradas)
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
-        left_panel.setFixedWidth(350)
+        left_panel.setFixedWidth(360)
         
         search_layout = QHBoxLayout()
         self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText("Buscar...")
+        self.search_bar.setPlaceholderText("Buscar servicio o usuario...")
+        self.search_bar.setClearButtonEnabled(True)
+        self.search_bar.setObjectName("searchBar")
         self.search_bar.textChanged.connect(self.filter_table)
         search_layout.addWidget(self.search_bar)
         
-        self.entries_table = QTableWidget()
-        self.entries_table.setColumnCount(2)
-        self.entries_table.setHorizontalHeaderLabels(["Servicio", "Usuario"])
-        self.entries_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.entries_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.entries_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.entries_table.itemSelectionChanged.connect(self.display_details)
+        self.entries_list = QListWidget()
+        self.entries_list.setObjectName("vaultCardList")
+        self.entries_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.entries_list.setSpacing(12)
+        self.entries_list.setUniformItemSizes(False)
+        self.entries_list.itemSelectionChanged.connect(self.display_details)
 
         left_layout.addLayout(search_layout)
-        left_layout.addWidget(self.entries_table)
+        left_layout.addWidget(self.entries_list)
         
         # Panel derecho (detalles y acciones)
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
+        right_layout.setSpacing(12)
         
         self.details_service = QLineEdit()
         self.details_service.setReadOnly(True)
+        self.details_service.setObjectName("detailField")
         self.details_username = QLineEdit()
         self.details_username.setReadOnly(True)
+        self.details_username.setObjectName("detailField")
         self.details_password = QLineEdit()
         self.details_password.setReadOnly(True)
         self.details_password.setEchoMode(QLineEdit.Password)
+        self.details_password.setObjectName("detailPasswordField")
 
         # Botones de accion de detalles
         pass_actions_layout = QHBoxLayout()
-        copy_user_btn = QPushButton("Copiar Usuario")
-        copy_pass_btn = QPushButton("Copiar Contraseña")
-        self.toggle_pass_btn = QPushButton("Mostrar")
+        copy_user_btn = QPushButton("📋 Copiar usuario")
+        copy_pass_btn = QPushButton("📋 Copiar contraseña")
+        self.toggle_pass_btn = QPushButton("👁️ Mostrar")
+        self.toggle_pass_btn.setObjectName("togglePassButton")
         pass_actions_layout.addWidget(copy_user_btn)
         pass_actions_layout.addWidget(copy_pass_btn)
         pass_actions_layout.addWidget(self.toggle_pass_btn)
@@ -335,11 +394,11 @@ class MainWindow(QMainWindow):
         edit_btn.clicked.connect(self.edit_entry)
         delete_btn.clicked.connect(self.delete_entry)
         
-        right_layout.addWidget(QLabel("Servicio:"))
+        right_layout.addWidget(QLabel("Servicio 🌐:"))
         right_layout.addWidget(self.details_service)
-        right_layout.addWidget(QLabel("Usuario:"))
+        right_layout.addWidget(QLabel("Usuario 👤:"))
         right_layout.addWidget(self.details_username)
-        right_layout.addWidget(QLabel("Contraseña:"))
+        right_layout.addWidget(QLabel("Contraseña 🔒:"))
         right_layout.addWidget(self.details_password)
         right_layout.addLayout(pass_actions_layout)
         right_layout.addStretch()
@@ -389,54 +448,64 @@ class MainWindow(QMainWindow):
     def lock_vault(self):
         self.vault_data = {}
         self.clear_details()
-        self.entries_table.setRowCount(0)
+        self.entries_list.clear()
         self.stacked_widget.setCurrentWidget(self.login_page)
 
     def populate_table(self):
-        self.entries_table.setRowCount(0)
+        self.entries_list.clear()
         for entry_id, data in self.vault_data.items():
-            row_position = self.entries_table.rowCount()
-            self.entries_table.insertRow(row_position)
-            self.entries_table.setItem(row_position, 0, QTableWidgetItem(data["service"]))
-            self.entries_table.setItem(row_position, 1, QTableWidgetItem(data["username"]))
-            # Guardamos el ID en la fila para facil acceso
-            self.entries_table.item(row_position, 0).setData(Qt.UserRole, entry_id)
+            item = QListWidgetItem()
+            card = CredentialCard()
+            card.set_data(data["service"], data["username"], data["password"])
+            item.setSizeHint(card.sizeHint())
+            item.setData(Qt.UserRole, entry_id)
+            self.entries_list.addItem(item)
+            self.entries_list.setItemWidget(item, card)
+        if self.entries_list.count() > 0:
+            self.entries_list.setCurrentRow(0)
 
     def display_details(self):
-        selected_items = self.entries_table.selectedItems()
-        if not selected_items:
+        current_item = self.entries_list.currentItem()
+        if current_item is None:
             self.clear_details()
             return
         
-        entry_id = selected_items[0].data(Qt.UserRole)
+        entry_id = current_item.data(Qt.UserRole)
         data = self.vault_data.get(entry_id)
         if data:
             self.details_service.setText(data["service"])
             self.details_username.setText(data["username"])
             self.details_password.setText(data["password"])
             self.details_password.setEchoMode(QLineEdit.Password)
-            self.toggle_pass_btn.setText("Mostrar")
+            self.toggle_pass_btn.setText("👁️ Mostrar")
 
     def clear_details(self):
         self.details_service.clear()
         self.details_username.clear()
         self.details_password.clear()
+        if hasattr(self, "entries_list"):
+            block_state = self.entries_list.blockSignals(True)
+            self.entries_list.clearSelection()
+            self.entries_list.blockSignals(block_state)
 
     def toggle_password_visibility(self):
         if self.details_password.echoMode() == QLineEdit.Password:
             self.details_password.setEchoMode(QLineEdit.Normal)
-            self.toggle_pass_btn.setText("Ocultar")
+            self.toggle_pass_btn.setText("🙈 Ocultar")
         else:
             self.details_password.setEchoMode(QLineEdit.Password)
-            self.toggle_pass_btn.setText("Mostrar")
+            self.toggle_pass_btn.setText("👁️ Mostrar")
             
     def filter_table(self, text):
-        for i in range(self.entries_table.rowCount()):
-            service_item = self.entries_table.item(i, 0)
-            username_item = self.entries_table.item(i, 1)
-            match = text.lower() in service_item.text().lower() or \
-                    text.lower() in username_item.text().lower()
-            self.entries_table.setRowHidden(i, not match)
+        text_lower = text.lower()
+        for i in range(self.entries_list.count()):
+            item = self.entries_list.item(i)
+            entry_id = item.data(Qt.UserRole)
+            entry = self.vault_data.get(entry_id, {})
+            service_val = entry.get("service", "")
+            username_val = entry.get("username", "")
+            match = text_lower in service_val.lower() or text_lower in username_val.lower()
+            item.setHidden(not match)
 
     def add_entry(self):
         dialog = AddEditDialog(parent=self)
@@ -450,12 +519,12 @@ class MainWindow(QMainWindow):
             # self.populate_table()
 
     def edit_entry(self):
-        selected_items = self.entries_table.selectedItems()
-        if not selected_items:
+        current_item = self.entries_list.currentItem()
+        if current_item is None:
             QMessageBox.warning(self, "Seleccion", "Por favor, selecciona una credencial para editar.")
             return
 
-        entry_id = selected_items[0].data(Qt.UserRole)
+        entry_id = current_item.data(Qt.UserRole)
         entry_data = self.vault_data.get(entry_id)
 
         dialog = AddEditDialog(entry_data=entry_data, parent=self)
@@ -466,12 +535,12 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "exito", "Credencial actualizada.")
     
     def delete_entry(self):
-        selected_items = self.entries_table.selectedItems()
-        if not selected_items:
+        current_item = self.entries_list.currentItem()
+        if current_item is None:
             QMessageBox.warning(self, "Seleccion", "Por favor, selecciona una credencial para eliminar.")
             return
 
-        entry_id = selected_items[0].data(Qt.UserRole)
+        entry_id = current_item.data(Qt.UserRole)
         service_name = self.vault_data[entry_id]['service']
         
         reply = QMessageBox.question(self, 'Confirmar', 

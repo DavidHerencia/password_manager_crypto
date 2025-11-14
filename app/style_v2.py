@@ -1,4 +1,6 @@
-# Estilos QSS
+# ---------------------------------------------------------
+# 🌿 FRUTIGER AERO THEME — Glossy, Fresh, Round, Airy
+# ---------------------------------------------------------
 opcion = 3
 
 if opcion == 1:
@@ -88,135 +90,150 @@ def get_stylesheet(theme="dark"):
         QWidget {{
             background-color: {bg};
             color: {text};
-            font-family: 'JetBrains Mono', 'Segoe UI', Arial;
+            font-family: 'Segoe UI', 'JetBrains Mono', Arial;
             font-size: 14px;
         }}
-        QMainWindow {{
+
+        QMainWindow, QDialog {{
             background-color: {bg};
         }}
-        QDialog {{
-            background-color: {bg};
-        }}
+
         QLabel {{
             color: {text};
         }}
+
+        /* INPUTS — estilo aero, suaves y redondeados */
         QLineEdit {{
-            background-color: {fg};
-            border: 1px solid {border};
-            border-radius: 10px;
+            background-color: rgba(255,255,255,0.06);
+            border: 1.5px solid {border};
+            border-radius: 14px;
             padding: 10px 14px;
             color: {text};
         }}
         QLineEdit:focus {{
-            border: 1px solid {accent};
+            border-color: {accent};
+            background-color: rgba(255,255,255,0.12);
         }}
+
         QLineEdit#searchBar {{
             border-radius: 22px;
             background-color: {soft};
-            border: 1px solid {border};
-            padding-left: 18px;
+            border: 1.5px solid {border};
+            padding-left: 20px;
         }}
-        QLineEdit#detailField,
-        QLineEdit#detailPasswordField {{
-            background-color: {soft};
+
+        #detailField, #detailPasswordField {{
+            background-color: rgba(255,255,255,0.10);
             border: 2px solid transparent;
-            border-radius: 16px;
+            border-radius: 20px;
             padding: 12px 16px;
-            font-size: 16px;
+            font-size: 15px;
         }}
-        QLineEdit#detailField:focus,
-        QLineEdit#detailPasswordField:focus {{
+        #detailField:focus, #detailPasswordField:focus {{
+            border-color: {accent};
+            background-color: rgba(255,255,255,0.16);
+        }}
+
+        /* BOTONES — estilo gel Frutiger Aero */
+        QPushButton {{
+            background: qlineargradient(
+                x1:0, y1:0, x2:0, y2:1,
+                stop:0 {accent},
+                stop:1 {hover}
+            );
+            border: 2px solid {border};
+            color: {bg};
+            border-radius: 10px;
+            padding: 10px 20px;
+            font-weight: bold;
+            letter-spacing: 0.3px;
+        }}
+
+        QPushButton:hover {{
+            background: qlineargradient(
+                x1:0, y1:0, x2:0, y2:1,
+                stop:0 {hover},
+                stop:1 {accent}
+            );
             border-color: {accent};
         }}
-        QPushButton {{
-            background-color: {accent};
-            color: #09040f;
-            border: none;
-            border-radius: 999px;
-            padding: 12px 18px;
-            font-weight: bold;
-            letter-spacing: 0.5px;
-        }}
-        QPushButton:hover {{
-            background-color: {hover};
-            color: {text};
-        }}
+
         QPushButton#togglePassButton {{
-            background-color: transparent;
+            background-color: rgba(255,255,255,0.05);
             border: 2px solid {card_border};
             color: {card_border};
             border-radius: 18px;
-            padding: 10px 18px;
+            padding: 10px 20px;
             font-weight: bold;
         }}
         QPushButton#togglePassButton:hover {{
             background-color: {card_border};
             color: {chip_text};
         }}
+
+        /* LISTA */
         QListWidget#vaultCardList {{
             background: transparent;
             border: none;
             padding: 0;
         }}
+
         QListWidget#vaultCardList::item {{
-            margin: 0 0 12px 0;
+            margin-bottom: 14px;
+            padding: 2px;
         }}
-        QListWidget#vaultCardList::item:selected {{
-            background: transparent;
-        }}
+
         QWidget#credentialCard {{
             background-color: {card_bg};
-            border: 2px solid {card_border};
-            border-radius: 20px;
-            padding: 6px;
+            border: 1.8px solid {card_border};
+            border-radius: 24px;
+            padding: 12px;
         }}
         QWidget#credentialCard:hover {{
             border-color: {accent};
+            background-color: rgba(255,255,255,0.03);
         }}
+
         QLabel#cardBadge {{
             min-width: 42px;
             max-width: 42px;
             min-height: 42px;
             max-height: 42px;
-            border-radius: 14px;
+            border-radius: 16px;
             background-color: {card_border};
             color: {chip_text};
             font-weight: bold;
             font-size: 18px;
         }}
+
         QLabel#cardChip {{
-            padding: 3px 12px;
+            padding: 3px 14px;
             border-radius: 999px;
             border: 1px solid {card_border};
             color: {card_border};
             font-size: 11px;
             letter-spacing: 3px;
         }}
-        QLabel#cardService {{
-            font-size: 16px;
-            font-weight: bold;
-        }}
-        QLabel#cardUsername {{
-            color: {text};
-            font-size: 14px;
-        }}
+
         QLabel#cardPassword {{
             color: {accent};
             font-size: 18px;
             letter-spacing: 4px;
         }}
+
+        /* SLIDERS */
         QSlider::groove:horizontal {{
             border: 1px solid {border};
             height: 8px;
-            background: {fg};
-            margin: 2px 0;
-            border-radius: 4px;
+            background: rgba(255,255,255,0.12);
+            border-radius: 6px;
         }}
+
         QSlider::handle:horizontal {{
             background: {accent};
             border: 1px solid {accent};
-            width: 18px;
-            margin: -5px 0;
-            border-radius: 9px;
+            width: 20px;
+            margin: -6px 0;
+            border-radius: 10px;
         }}
     """
