@@ -126,6 +126,99 @@ sequenceDiagram
     deactivate S
 ```
 
+### Arquitectura de Sistema Completa
+```mermaid
+graph LR
+
+  %% ==========================
+  %% CLIENT
+  %% ==========================
+    subgraph ClientSection["Client (User)"]
+        GUI["Qt GUI"]
+        Crypto["Crypto Engine"]
+        HTTP["HTTP Client"]
+
+        GUI --> Crypto
+        Crypto --> HTTP
+        HTTP --> Crypto
+    end
+
+
+  %% ==========================
+  %% FASTAPI SERVER
+  %% ==========================
+  subgraph APIServer["Backend (Server)"]
+    direction TB
+
+    Ingress["Entry Point / FastAPI Router"]
+
+    %% --- Module A: Users and Authentication ---
+    subgraph AuthModule["A. Users service"]
+      direction TB
+      Endpoint_Register["POST /api/users (Register)"]
+      Endpoint_Login["POST /api/token (Login)"]
+      UserLogic["User Logic:
+        - Argon2id Hashing
+        - Hash Comparison
+        - JWT Generation"]
+    end
+
+    %% --- Module B: Vault ---
+    subgraph VaultModule["B. Vault service"]
+      Middleware_JWT["Middleware: JWT Verification"]
+      Endpoint_Get["GET /api/vault (Fetch Vault)"]
+      Endpoint_Update["PUT /api/vault (Update Vault)"]
+      VaultLogic["Vault Logic:
+        - Extracts user_id from JWT
+        - CRUD on encrypted blob"]
+    end
+
+    Ingress --> Endpoint_Register
+    Ingress --> Endpoint_Login
+    Ingress --> Middleware_JWT
+
+    Middleware_JWT --> Endpoint_Get
+    Middleware_JWT --> Endpoint_Update
+
+    Endpoint_Register --> UserLogic
+    Endpoint_Login --> UserLogic
+
+    Endpoint_Get --> VaultLogic
+    Endpoint_Update --> VaultLogic
+
+  end
+
+
+  %% ==========================
+  %% DATABASE
+  %% ==========================
+  subgraph DatabaseSection["Database (PostgreSQL)"]
+
+    UsersTable["users table:
+    - id
+    - username
+    - salt_auth
+    - hash_auth"]
+    VaultsTable["vaults table:
+    - user_id
+    - salt_kdf
+    - nonce
+    - ciphertext
+    - tag"]
+  end
+
+  UserLogic -- "SQL" --> UsersTable
+  VaultLogic -- "SQL" --> VaultsTable
+
+  HTTP -->|"HTTP/S"| Ingress
+
+
+  style ClientSection fill:#D6EAF8,stroke:#3498DB
+  style APIServer fill:#D5F5E3,stroke:#2ECC71
+  style VaultModule fill:#FADBD8,stroke:#E74C3C
+  style AuthModule fill:#FCF3CF,stroke:#F1C40F
+```
+
 ## 6. Diseño de Interfaz (Borrador)
 - **Pantalla de Desbloqueo**: Campo único para la contraseña maestra.
 - **Dashboard Principal**: Lista de credenciales con búsqueda y filtrado. Botones para "Añadir Nueva" y "Sincronizar".
