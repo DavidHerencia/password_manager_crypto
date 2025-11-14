@@ -39,7 +39,6 @@ La clave que cifra el vault se deriva en el cliente utilizando un KDF (Key Deriv
 - **Entradas**:
     1.  **Contraseña Maestra**: Proporcionada por el usuario.
     2.  **Salt**: 16 bytes generados aleatoriamente durante el registro del usuario. Se almacena en el servidor junto al vault cifrado.
-    3.  **Pepper (Secreto del Cliente)**: Un secreto secundario de 16 bytes generado y guardado en el gestor de credenciales del sistema operativo del cliente (ej. Windows Credential Manager). Nunca sale del dispositivo.
 - **Parámetros de Argon2id**: `time_cost=3`, `memory_cost=65536` (64 MB), `parallelism=2`, `hash_len=32` (para una clave AES-256).
 - **Salida**: Una clave de cifrado simétrica de 32 bytes (`Derived Key`).
 
@@ -136,12 +135,11 @@ sequenceDiagram
 ## 7. Seguridad Práctica y Mitigaciones
 | Amenaza | Mitigación |
 | :--- | :--- |
-| **Ataque Offline al Vault** | KDF **Argon2id** con alto coste de memoria para ralentizar ataques de fuerza bruta. El **pepper** local añade otra capa de secreto. |
+| **Ataque Offline al Vault** | KDF **Argon2id** con alto coste de memoria para ralentizar ataques de fuerza bruta |
 | **Manipulación de Datos** | Cifrado autenticado **AES-GCM**. El **auth_tag** (MAC) previene cualquier modificación no detectada del vault en tránsito o en reposo. |
 | **Intercepción de Tráfico** | Comunicación exclusivamente sobre **TLS 1.2+ (HTTPS)** con validación estricta de certificados. |
 | **Acceso no autorizado a la API** | Autenticación de sesión con **JWTs** de corta duración. Todas las acciones requieren un token válido. |
 | **Fuerza Bruta al Login** | **Rate limiting** y bloqueo temporal de IP/cuenta en el endpoint de autenticación del servidor. |
-| **Pérdida del Secreto Local (Pepper)** | El usuario es advertido de que perder este secreto implica la pérdida de acceso. Se ofrecerá una opción de respaldo cifrado del pepper. |
 | **Memoria Insegura** | Limpieza explícita de buffers que contengan la contraseña maestra o la clave derivada tan pronto como dejen de ser necesarios. |
 
 ## 8. Tecnologías y Librerías
