@@ -80,9 +80,9 @@ class AddEditDialog(QDialog):
 
         layout = QVBoxLayout(self)
         self.service_input = QLineEdit()
-        self.service_input.setPlaceholderText("Nombre del Servicio (ej. Google)")
+        self.service_input.setPlaceholderText("Nombre del servicio (ej. Google)")
         self.username_input = QLineEdit()
-        self.username_input.setPlaceholderText("Usuario o Email")
+        self.username_input.setPlaceholderText("Usuario o email")
         
         pass_layout = QHBoxLayout()
         self.password_input = QLineEdit()
@@ -150,7 +150,7 @@ class MainWindow(QMainWindow):
 
         # --- Barra de Menu ---
         menu_bar = self.menuBar()
-        file_menu = menu_bar.addMenu("Cerrar Sesion")
+        file_menu = menu_bar.addMenu("Sesion")
         lock_action = QAction("Bloquear", self)
         lock_action.triggered.connect(self.lock_vault)
         file_menu.addAction(lock_action)
@@ -165,11 +165,12 @@ class MainWindow(QMainWindow):
         #     self.stacked_widget.setCurrentWidget(self.login_page)
         # else:
         #     self.stacked_widget.setCurrentWidget(self.setup_page)
-        # TO TEST
-        if not VAULT_EXISTS: 
-            self.stacked_widget.setCurrentWidget(self.setup_page)
-        else:
-            self.stacked_widget.setCurrentWidget(self.login_page)
+        # TO TEST 
+        # if not VAULT_EXISTS: 
+        #     self.stacked_widget.setCurrentWidget(self.setup_page)
+        # else:
+        #     self.stacked_widget.setCurrentWidget(self.login_page)
+        self.stacked_widget.setCurrentWidget(self.login_page)
 
     def toggle_theme(self):
         if self.current_theme == "dark":
@@ -202,8 +203,14 @@ class MainWindow(QMainWindow):
         self.setup_confirm_pass.setPlaceholderText("confirma tu contraseña maestra")
         self.setup_confirm_pass.setEchoMode(QLineEdit.Password)
         
-        create_button = QPushButton("Crear Bóveda")
+        create_button =  QPushButton("Crear Bóveda")
         create_button.clicked.connect(self.handle_create_vault)
+
+        login_button = QPushButton("¿Ya tienes una bóveda? Iniciar Sesión")
+        login_button.setStyleSheet("background-color: transparent; border: none; color: #61afef;") 
+        login_button.setCursor(Qt.PointingHandCursor)
+        login_button.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.login_page))
+        
         
         container = QWidget()
         container.setFixedWidth(400)
@@ -218,6 +225,9 @@ class MainWindow(QMainWindow):
         container_layout.addWidget(self.setup_confirm_pass)
         container_layout.addSpacing(10)
         container_layout.addWidget(create_button)
+        container_layout.addSpacing(10)
+        container_layout.addWidget(login_button)
+
         
         layout.addWidget(container)
         return widget
@@ -240,6 +250,11 @@ class MainWindow(QMainWindow):
         
         unlock_button = QPushButton("Desbloquear")
         unlock_button.clicked.connect(self.handle_unlock)
+
+        setup_button = QPushButton("¿No tienes bóveda? Crear una")
+        setup_button.setStyleSheet("background-color: transparent; border: none; color: #61afef;") 
+        setup_button.setCursor(Qt.PointingHandCursor)
+        setup_button.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.setup_page))     
         
         container = QWidget()
         container.setFixedWidth(400)
@@ -252,6 +267,8 @@ class MainWindow(QMainWindow):
         container_layout.addWidget(self.login_master_pass)
         container_layout.addSpacing(10)
         container_layout.addWidget(unlock_button)
+        container_layout.addSpacing(10)
+        container_layout.addWidget(setup_button)
         
         layout.addWidget(container)
         return widget
