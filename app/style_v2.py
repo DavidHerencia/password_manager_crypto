@@ -1,97 +1,81 @@
 # ---------------------------------------------------------
-# 🌿 FRUTIGER AERO THEME — Glossy, Fresh, Round, Airy
+# Windows XP-inspired classic theme (high contrast + bevels)
 # ---------------------------------------------------------
-opcion = 3
 
-if opcion == 1:
-    # Dark theme — glossy aero night
-    dark_bg = "#0f1020"
-    dark_fg = "#1a1d33"
-    dark_text = "#f0f8ff"
-    dark_accent = "#66e4ff"       # aqua glossy
-    dark_border = "#6eb3ff"
-    dark_hover = "#27305a"
-    dark_card_bg = "#14162b"
-    dark_card_border = "#8cd1ff"
-    dark_chip_text = "#0f1020"
-    dark_soft = "#1c203a"
+BASE_FONT = "'Tahoma', 'Segoe UI', Arial"
 
-    # Light theme — refined soft blue
-    light_bg = "#F2F5F9"
-    light_fg = "#FFFFFF"
-    light_text = "#1A1A1A"
-    light_accent = "#4A8DE0"
-    light_border = "#C9D7E6"
-    light_hover = "#DCE7F5"
-    light_card_bg = "#E7EDF5"
-    light_card_border = "#8BB2E8"
-    light_chip_text = "#FFFFFF"
-    light_soft = "#EDF2F7"
-elif opcion == 2:
-    # Futuristic colors
-    # Futuristic Dark — neon cyan & purple
-    dark_bg = "#0D1117"
-    dark_fg = "#161B22"
-    dark_text = "#E6EEF7"
-    dark_accent = "#00FFC8"        # neon cyan
-    dark_border = "#303A46"
-    dark_hover = "#1C2A30"
-    dark_card_bg = "#1A222C"
-    dark_card_border = "#8A4FFF"   # soft purple neon
-    dark_chip_text = "#0D1117"
-    dark_soft = "#141A21" 
-    # Futuristic Light — aqua & lavender minimal
-    light_bg = "#F6F9FC"
-    light_fg = "#FFFFFF"
-    light_text = "#1A1D21"
-    light_accent = "#00B7A8"        # aqua futurista
-    light_border = "#CBD5E1"
-    light_hover = "#DFF6F3"
-    light_card_bg = "#EDF1F7"
-    light_card_border = "#A37CFF"   # lavender neon
-    light_chip_text = "#FFFFFF"
-    light_soft = "#EAF3FA"
+# Dark "midnight" variant
+dark = {
+    "bg": "#111a2d",
+    "panel": "#1a2741",
+    "panel_high": "#233554",
+    "text": "#f8fbff",
+    "muted": "#c7d0e6",
+    "accent": "#2d6de1",
+    "accent_alt": "#4b82f0",
+    "border": "#0a1433",
+    "header": "#142443",
+    "selection": "#6fa0ff",
+    "shadow": "#030814",
+    "list_bg": "#0c1526",
+    "card_base": "#1f2f4c",
+    "card_alt": "#2e4675",
+}
 
-else:
-    # Colores: dark theme
-    dark_bg = "#120d1c"
-    dark_fg = "#241833"
-    dark_text = "#f0e8ff"
-    dark_accent = "#3df2ff" # letras
-    dark_border = "#5f2df3"
-    dark_hover = "#362448"
-    dark_card_bg = "#201230"
-    dark_card_border = "#ff6ac1"
-    dark_chip_text = "#120d1c"
-    dark_soft = "#1a1426"
+# Light "silver" variant
+light = {
+    "bg": "#dde6f7",
+    "panel": "#edf2ff",
+    "panel_high": "#ffffff",
+    "text": "#112247",
+    "muted": "#536182",
+    "accent": "#1c57d6",
+    "accent_alt": "#3a73f0",
+    "border": "#9babc9",
+    "header": "#cdd9ef",
+    "selection": "#a6c4ff",
+    "shadow": "#a0aec9",
+    "list_bg": "#fefefe",
+    "card_base": "#f8faff",
+    "card_alt": "#dae5ff",
+}
 
-    # Colores: light theme
-    light_bg = "#fef6ff"
-    light_fg = "#ffffff"
-    light_text = "#1f1a2c"
-    light_accent = "#ff5aa5" # letras
-    light_border = "#ffd2f0"
-    light_hover = "#ffe5fb"
-    light_card_bg = "#fff0fb"
-    light_card_border = "#ff7ad9"
-    light_chip_text = "#ffffff"
-    light_soft = "#f8e9ff"
+def _gradient(top_color: str, bottom_color: str) -> str:
+    """Returns a vertical gradient expression for Qt stylesheets."""
+    return (
+        "qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 "
+        f"{top_color}, stop:1 {bottom_color})"
+    )
 
+def get_stylesheet(theme: str = "dark") -> str:
+    palette = dark if theme == "dark" else light
+    bg = palette["bg"]
+    panel = palette["panel"]
+    panel_high = palette["panel_high"]
+    text = palette["text"]
+    muted = palette["muted"]
+    accent = palette["accent"]
+    accent_alt = palette["accent_alt"]
+    border = palette["border"]
+    header = palette["header"]
+    selection = palette["selection"]
+    shadow = palette["shadow"]
+    list_bg = palette["list_bg"]
+    card_base = palette["card_base"]
+    card_alt = palette["card_alt"]
 
-def get_stylesheet(theme="dark"):
-    if theme == "dark":
-        bg, fg, text, accent, border, hover = dark_bg, dark_fg, dark_text, dark_accent, dark_border, dark_hover
-        card_bg, card_border, chip_text, soft = dark_card_bg, dark_card_border, dark_chip_text, dark_soft
-    else:
-        bg, fg, text, accent, border, hover = light_bg, light_fg, light_text, light_accent, light_border, light_hover
-        card_bg, card_border, chip_text, soft = light_card_bg, light_card_border, light_chip_text, light_soft
+    button_grad = _gradient(panel_high, header)
+    accent_grad = _gradient(accent_alt, accent)
+    toolbar_grad = _gradient(header, panel)
+    titlebar_grad = _gradient(accent, accent_alt)
+    card_grad = _gradient(panel_high, panel)
 
     return f"""
         QWidget {{
             background-color: {bg};
             color: {text};
-            font-family: 'Segoe UI', 'JetBrains Mono', Arial;
-            font-size: 14px;
+            font-family: {BASE_FONT};
+            font-size: 13px;
         }}
 
         QMainWindow, QDialog {{
@@ -102,138 +86,309 @@ def get_stylesheet(theme="dark"):
             color: {text};
         }}
 
-        /* INPUTS — estilo aero, suaves y redondeados */
-        QLineEdit {{
-            background-color: rgba(255,255,255,0.06);
-            border: 1.5px solid {border};
-            border-radius: 14px;
-            padding: 10px 14px;
-            color: {text};
-        }}
-        QLineEdit:focus {{
-            border-color: {accent};
-            background-color: rgba(255,255,255,0.12);
+        QLabel[accessibleName="muted"] {{
+            color: {muted};
         }}
 
-        QLineEdit#searchBar {{
-            border-radius: 22px;
-            background-color: {soft};
-            border: 1.5px solid {border};
-            padding-left: 20px;
+        QLabel#pageTitle {{
+            padding: 0;
+            margin-bottom: 0;
+            border: none;
+            padding: 4px 8px;
+            border-bottom: 1px solid {border};
         }}
 
-        #detailField, #detailPasswordField {{
-            background-color: rgba(255,255,255,0.10);
-            border: 2px solid transparent;
-            border-radius: 20px;
-            padding: 12px 16px;
-            font-size: 15px;
-        }}
-        #detailField:focus, #detailPasswordField:focus {{
-            border-color: {accent};
-            background-color: rgba(255,255,255,0.16);
-        }}
-
-        /* BOTONES — estilo gel Frutiger Aero */
-        QPushButton {{
-            background: qlineargradient(
-                x1:0, y1:0, x2:0, y2:1,
-                stop:0 {accent},
-                stop:1 {hover}
-            );
-            border: 2px solid {border};
-            color: {bg};
-            border-radius: 10px;
-            padding: 10px 20px;
-            font-weight: bold;
-            letter-spacing: 0.3px;
-        }}
-
-        QPushButton:hover {{
-            background: qlineargradient(
-                x1:0, y1:0, x2:0, y2:1,
-                stop:0 {hover},
-                stop:1 {accent}
-            );
-            border-color: {accent};
-        }}
-
-        QPushButton#togglePassButton {{
-            background-color: rgba(255,255,255,0.05);
-            border: 2px solid {card_border};
-            color: {card_border};
-            border-radius: 18px;
-            padding: 10px 20px;
-            font-weight: bold;
-        }}
-        QPushButton#togglePassButton:hover {{
-            background-color: {card_border};
-            color: {chip_text};
-        }}
-
-        /* LISTA */
-        QListWidget#vaultCardList {{
+        QPushButton#linkButton {{
             background: transparent;
             border: none;
+            color: {accent};
+            text-align: left;
             padding: 0;
         }}
 
-        QListWidget#vaultCardList::item {{
-            margin-bottom: 14px;
+        QPushButton#linkButton:hover {{
+            color: {accent_alt};
+            text-decoration: underline;
+            margin-bottom: 6px;
+        }}
+
+        QGroupBox, QWidget#panelBox {{
+            background-color: {panel};
+            border: 1px solid {border};
+            border-radius: 6px;
+            padding: 10px;
+        }}
+
+        QLineEdit {{
+            background-color: {panel_high};
+            border: 1px solid {border};
+            border-radius: 4px;
+            padding: 6px 8px;
+            color: {text};
+        }}
+
+        QLineEdit:focus {{
+            border-color: {accent};
+            outline: none;
+            background-color: {panel};
+        }}
+
+        QLineEdit#searchBar {{
+            background-color: {bg};
+            border-radius: 18px;
+            padding-left: 32px;
+        }}
+
+        QTextEdit, QPlainTextEdit {{
+            background-color: {panel_high};
+            border: 1px solid {border};
+            border-radius: 4px;
+            padding: 6px;
+        }}
+
+        QComboBox {{
+            background-color: {panel_high};
+            border: 1px solid {border};
+            border-radius: 4px;
+            padding: 4px 8px;
+        }}
+
+        QComboBox::drop-down {{
+            width: 24px;
+            border-left: 1px solid {border};
+        }}
+
+        QPushButton {{
+            background: {button_grad};
+            border: 1px solid {border};
+            border-radius: 5px;
+            padding: 6px 14px;
+            color: {text};
+            font-weight: 600;
+            min-height: 28px;
+        }}
+
+        QPushButton:hover {{
+            background: {accent_grad};
+            border-color: {accent};
+            color: #fefefe;
+        }}
+
+        QPushButton:pressed {{
+            background: {accent};
+            border-color: {accent};
+            color: #fefefe;
+        }}
+
+        QPushButton:disabled {{
+            color: {muted};
+            background: {panel};
+        }}
+
+        QPushButton#togglePassButton {{
+            background: {panel_high};
+            color: {text};
+        }}
+
+        QListWidget {{
+            background-color: {list_bg};
+            border: 1px solid {border};
+            border-radius: 8px;
+            alternate-background-color: {panel_high};
+            padding: 6px;
+        }}
+
+        QListWidget::item {{
             padding: 2px;
+            margin-bottom: 8px;
+            border-radius: 10px;
+        }}
+
+        QListWidget::item:selected {{
+            background-color: {selection};
+            color: #0b1634;
+            border: 1px solid {accent};
+            padding: 0;
         }}
 
         QWidget#credentialCard {{
-            background-color: {card_bg};
-            border: 1.8px solid {card_border};
-            border-radius: 24px;
+            background: {card_base};
+            border: 1px solid {border};
+            border-radius: 8px;
             padding: 12px;
+            border-left: 4px solid {border};
         }}
+
+        QWidget#credentialCard[variant="base"] {{
+            background: {card_base};
+            border-color: {border};
+            border-left-color: {border};
+        }}
+
+        QWidget#credentialCard[variant="base"] QLabel#cardBadge {{
+            background: {button_grad};
+        }}
+
+        QWidget#credentialCard[variant="alt"] {{
+            background: {card_alt};
+            border-color: {accent};
+            border-left-color: {accent_alt};
+        }}
+
+        QWidget#credentialCard[variant="alt"] QLabel#cardBadge {{
+            background: {accent_grad};
+        }}
+
+        QWidget#credentialCard QLabel {{
+            color: {text};
+        }}
+
         QWidget#credentialCard:hover {{
             border-color: {accent};
-            background-color: rgba(255,255,255,0.03);
         }}
 
         QLabel#cardBadge {{
-            min-width: 42px;
-            max-width: 42px;
-            min-height: 42px;
-            max-height: 42px;
-            border-radius: 16px;
-            background-color: {card_border};
-            color: {chip_text};
+            min-width: 28px;
+            max-width: 28px;
+            min-height: 28px;
+            max-height: 28px;
+            border-radius: 4px;
+            background: {accent_grad};
+            color: #fff;
             font-weight: bold;
-            font-size: 18px;
+            font-size: 13px;
+            text-align: center;
         }}
 
-        QLabel#cardChip {{
-            padding: 3px 14px;
-            border-radius: 999px;
-            border: 1px solid {card_border};
-            color: {card_border};
-            font-size: 11px;
-            letter-spacing: 3px;
+        QLabel#cardIcon {{
+            min-width: 24px;
+            max-width: 24px;
+            text-align: center;
+            color: {muted};
+            font-size: 16px;
+        }}
+
+        QLabel#cardService {{
+            font-weight: 600;
+            padding-right: 8px;
+        }}
+
+        QLabel#cardUsername {{
+            color: {muted};
+            padding-bottom: 2px;
         }}
 
         QLabel#cardPassword {{
+            font-family: 'Consolas', 'Courier New', monospace;
+            letter-spacing: 2px;
             color: {accent};
-            font-size: 18px;
-            letter-spacing: 4px;
         }}
 
-        /* SLIDERS */
         QSlider::groove:horizontal {{
+            background: {panel_high};
             border: 1px solid {border};
-            height: 8px;
-            background: rgba(255,255,255,0.12);
-            border-radius: 6px;
+            height: 6px;
+            border-radius: 3px;
         }}
 
         QSlider::handle:horizontal {{
             background: {accent};
             border: 1px solid {accent};
-            width: 20px;
-            margin: -6px 0;
-            border-radius: 10px;
+            width: 16px;
+            margin: -5px 0;
+            border-radius: 8px;
+        }}
+
+        QTabWidget::pane {{
+            border: 1px solid {border};
+            background: {panel};
+            border-radius: 4px;
+        }}
+
+        QTabBar::tab {{
+            background: {button_grad};
+            border: 1px solid {border};
+            padding: 6px 12px;
+            margin-right: 2px;
+        }}
+
+        QTabBar::tab:selected {{
+            background: {accent_grad};
+            color: #fff;
+        }}
+
+        QProgressBar {{
+            border: 1px solid {border};
+            border-radius: 4px;
+            background: {panel_high};
+            text-align: center;
+        }}
+
+        QProgressBar::chunk {{
+            background: {accent_grad};
+        }}
+
+        QProgressDialog {{
+            background-color: {panel};
+        }}
+
+        QStatusBar {{
+            background: {titlebar_grad};
+            color: #ffffff;
+            border-top: 2px solid {border};
+            padding: 0 8px;
+        }}
+
+        QToolTip {{
+            background-color: {panel_high};
+            border: 1px solid {border};
+            color: {text};
+        }}
+
+        QMenuBar {{
+            background: {titlebar_grad};
+            border-bottom: 2px solid {border};
+        }}
+
+        QMenuBar::item {{
+            padding: 4px 12px;
+        }}
+
+        QMenuBar::item:selected {{
+            background: #ffffff33;
+            color: #fff;
+        }}
+
+        QToolBar {{
+            background: {toolbar_grad};
+            border-bottom: 1px solid {border};
+        }}
+
+        QScrollBar:vertical {{
+            background: {panel};
+            width: 14px;
+            margin: 0;
+            border: 1px solid {border};
+        }}
+
+        QScrollBar::handle:vertical {{
+            background: {button_grad};
+            min-height: 24px;
+            border: 1px solid {border};
+        }}
+
+        QScrollBar::handle:vertical:hover {{
+            background: {accent_grad};
+        }}
+
+        QScrollBar::up-arrow, QScrollBar::down-arrow {{
+            border: none;
+            width: 10px;
+            height: 10px;
+            background: transparent;
+        }}
+        
+        QListWidget::item {{
+            background: #edf2ff;
         }}
     """

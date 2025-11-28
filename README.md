@@ -67,63 +67,71 @@ Para que el servidor sepa qué usuario está realizando una petición sin enviar
 
 ### Diagrama 1: Flujo de Cifrado del Vault (Client-Side)
 ```mermaid
-flowchart TD
-    subgraph Cliente Desktop
-        U[Usuario] -->|"Contraseña Maestra"| C{Derivación de Clave}
-        S[Salt del Servidor] --> C
-        C --"Argon2id"--> K[Clave Derivada 256-bit]
+flowchart TB
+ subgraph subGraph0["Client"]
+        C{"Key Derivation"}
+        U["User login"]
+        S["Server Salt"]
+        K["Derived Key 256-bit"]
+        ENC["AES-256-GCM Encrypt"]
+        V_PT["Vault Plaintext"]
+        V_CT["Ciphertext + Auth_Tag"]
+        N["Random Nonce"]
+        DEC["AES-256-GCM Decrypt"]
+        V_CT_IN["Ciphertext + Auth_Tag from Server"]
+        N_IN["Nonce from Server"]
+  end
+ subgraph subGraph1["Server"]
+        DB["Database: salt + nonce + ciphertext + auth_tag"]
+  end
+    U -- Master Password --> C
+    S --> C
+    C -- Argon2id --> K
+    V_PT --> ENC
+    K --> ENC & DEC
+    ENC --> V_CT & N
+    V_CT_IN --> DEC
+    N_IN --> DEC
+    DEC --> V_PT
+    V_CT -- Upload --> DB
+    N -- Upload --> DB
+    DB -- Download --> V_CT_IN & N_IN & S
 
-        V_PT[Vault en Texto Plano] --> ENC[AES-256-GCM Encrypt]
-        K --> ENC
-        ENC --> V_CT[Ciphertext + Auth_Tag]
-        ENC --> N[Nonce Aleatorio]
 
-        K --> DEC[AES-256-GCM Decrypt]
-        V_CT_IN[Ciphertext + Auth_Tag del Servidor] --> DEC
-        N_IN[Nonce del Servidor] --> DEC
-        DEC --> V_PT
-    end
-
-    subgraph Servidor API
-        DB[Base de Datos: salt + nonce + ciphertext + auth_tag]
-    end
-
-    V_CT -->|"Subida"| DB
-    N -->|"Subida"| DB
-    DB -->|"Descarga"| V_CT_IN
-    DB -->|"Descarga"| N_IN
-    DB -->|"Descarga"| S
+    style subGraph1 fill:#C8E6C9,stroke:#00C853
+    style subGraph0 fill:#BBDEFB,stroke:#2962FF
 ```
 
 ### Diagrama 2: Flujo de Autenticación de Sesión (Cliente-Servidor)
 ```mermaid
 sequenceDiagram
-    participant C as Cliente Desktop
-    participant S as Servidor API
+    participant C as Client
+    participant S as Server
 
     C->>S: 1. POST /api/token (username, master_password)
     activate S
-    S-->>S: Verifica credenciales contra hash en BD
-    alt Verificación Exitosa
-        S-->>S: Genera JWT firmado
+    S-->>S: Verify credentials against hash in DB
+    alt Successful Verification
+        S-->>S: Generate signed JWT
         S->>C: 2. OK (access_token: JWT)
-    else Verificación Fallida
+    else Failed Verification
         S->>C: 401 Unauthorized
     end
     deactivate S
 
-    Note over C,S: Cliente almacena el JWT en memoria para la sesión
+    Note over C,S: Client stores the JWT in memory for the session
 
-    C->>S: 3. PUT /api/vault (nuevo_blob_cifrado)<br/>Header: Authorization: Bearer JWT
+    C->>S: 3. PUT /api/vault (new_encrypted_blob)<br/>Header: Authorization: Bearer JWT
     activate S
-    S-->>S: Verifica firma y expiración del JWT
-    alt JWT Válido
-        S-->>S: Actualiza el vault para el user_id del token
+    S-->>S: Verify JWT signature and expiration
+    alt Valid JWT
+        S-->>S: Update vault for user_id from token
         S->>C: 4. OK
-    else JWT Inválido
+    else Invalid JWT
         S->>C: 401 Unauthorized
     end
     deactivate S
+
 ```
 
 ### Arquitectura de Sistema Completa
