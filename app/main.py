@@ -3,15 +3,37 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLineEdit, QLabel, QStackedWidget, QListWidget,
     QListWidgetItem, QAbstractItemView, QDialog, QDialogButtonBox,
-    QCheckBox, QSlider, QMessageBox
+    QCheckBox, QSlider, QMessageBox, QProgressDialog, QStyle,
+    QSizePolicy
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon, QAction
+from PySide6.QtCore import Qt, QRunnable, QThreadPool, QObject, Signal, Slot
+from PySide6.QtGui import QAction
 
 # self modules
 import crypto_engine
-from crypto_engine import VAULT_EXISTS
 from style_v2 import get_stylesheet
+
+class WorkerSignals(QObject):
+    finished = Signal(object)
+    error = Signal(str)
+
+
+class Worker(QRunnable):
+    def __init__(self, fn, *args, **kwargs):
+        super().__init__()
+        self.fn = fn
+        self.args = args
+        self.kwargs = kwargs
+        self.signals = WorkerSignals()
+
+    @Slot()
+    def run(self):
+        try:
+            result = self.fn(*self.args, **self.kwargs)
+            self.signals.finished.emit(result)
+        except Exception as exc:
+            self.signals.error.emit(str(exc))
+
 
 class PasswordGeneratorDialog(QDialog):
     def __init__(self, parent=None):
@@ -131,34 +153,54 @@ class CredentialCard(QWidget):
         self.username_text = ""
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(6)
 
         header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(8)
 
-        self.badge_label = QLabel("⚡")
+        self.badge_label = QLabel("?")
         self.badge_label.setObjectName("cardBadge")
         self.badge_label.setAlignment(Qt.AlignCenter)
         header_layout.addWidget(self.badge_label)
 
         self.service_label = QLabel()
         self.service_label.setObjectName("cardService")
+        self.service_label.setWordWrap(True)
+        self.service_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        self.service_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         header_layout.addWidget(self.service_label, 1)
-
-        self.chip_label = QLabel("RETRO")
-        self.chip_label.setObjectName("cardChip")
-        header_layout.addWidget(self.chip_label)
 
         layout.addLayout(header_layout)
 
+        username_row = QHBoxLayout()
+        username_row.setSpacing(6)
+        self.username_icon = QLabel("👤")
+        self.username_icon.setObjectName("cardIcon")
+        self.username_icon.setAlignment(Qt.AlignCenter)
+        self.username_icon.setFixedWidth(24)
+        username_row.addWidget(self.username_icon)
         self.username_label = QLabel()
         self.username_label.setObjectName("cardUsername")
-        layout.addWidget(self.username_label)
+        self.username_label.setWordWrap(True)
+        self.username_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        username_row.addWidget(self.username_label, 1)
+        layout.addLayout(username_row)
 
+        password_row = QHBoxLayout()
+        password_row.setSpacing(6)
+        self.password_icon = QLabel("🔑")
+        self.password_icon.setObjectName("cardIcon")
+        self.password_icon.setAlignment(Qt.AlignCenter)
+        self.password_icon.setFixedWidth(24)
+        password_row.addWidget(self.password_icon)
         self.password_label = QLabel()
         self.password_label.setObjectName("cardPassword")
-        layout.addWidget(self.password_label)
+        self.password_label.setWordWrap(True)
+        self.password_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        password_row.addWidget(self.password_label, 1)
+        layout.addLayout(password_row)
 
         self.setMinimumHeight(90)
 
@@ -167,13 +209,18 @@ class CredentialCard(QWidget):
         self.username_text = username
         badge_char = service[:1].upper() if service else "?"
         self.badge_label.setText(badge_char)
-        self.service_label.setText(f"🪐 {service}")
-        chip_text = (service[:4] or "NEON").upper()
-        self.chip_label.setText(chip_text)
-        self.username_label.setText(f"👤 {username}")
-        masked_len = max(4, min(len(password), 10))
-        masked = "•" * masked_len
-        self.password_label.setText(f"🔑 {masked}")
+        self.service_label.setText(service or "(sin nombre)")
+        self.username_label.setText(username or "(sin usuario)")
+        masked_len = max(4, min(len(password), 12))
+        mask = "•" * masked_len
+        masked = " ".join(mask[i:i + 4] for i in range(0, len(mask), 4))
+        self.password_label.setText(masked)
+
+    def set_variant(self, variant: str):
+        self.setProperty("variant", variant)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
 
 
 class MainWindow(QMainWindow):
@@ -182,6 +229,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Administrador de Contraseñas Seguro")
         self.setMinimumSize(800, 600)
         self.current_theme = "dark"
+        self.statusBar().showMessage("Listo")
+        self.loading_dialog = None
+        self.thread_pool = QThreadPool()
+        self._workers = []
+        self._init_icons()
 
         self.stacked_widget = QStackedWidget()
         self.setCentralWidget(self.stacked_widget)
@@ -205,6 +257,7 @@ class MainWindow(QMainWindow):
         menu_bar = self.menuBar()
         file_menu = menu_bar.addMenu("Sesion")
         lock_action = QAction("Bloquear", self)
+        lock_action.setIcon(self.icons["lock"])
         lock_action.triggered.connect(self.lock_vault)
         file_menu.addAction(lock_action)
         
@@ -219,8 +272,7 @@ class MainWindow(QMainWindow):
         # else:
         #     self.stacked_widget.setCurrentWidget(self.setup_page)
         # TO TEST 
-        # if not VAULT_EXISTS: 
-        #     self.stacked_widget.setCurrentWidget(self.setup_page)
+        # Aquí se podría validar estado inicial del backend si es necesario.
         # else:
         #     self.stacked_widget.setCurrentWidget(self.login_page)
         self.stacked_widget.setCurrentWidget(self.login_page)
@@ -241,7 +293,7 @@ class MainWindow(QMainWindow):
         layout.setAlignment(Qt.AlignCenter)
         
         title = QLabel("Crear Bóveda Segura")
-        title.setStyleSheet("font-size: 24px; font-weight: bold;")
+        title.setObjectName("pageTitle")
         title.setAlignment(Qt.AlignCenter)
 
         # Create user
@@ -260,7 +312,7 @@ class MainWindow(QMainWindow):
         create_button.clicked.connect(self.handle_create_vault)
 
         login_button = QPushButton("¿Ya tienes una bóveda? Iniciar Sesión")
-        login_button.setStyleSheet("background-color: transparent; border: none; color: #61afef;") 
+        login_button.setObjectName("linkButton")
         login_button.setCursor(Qt.PointingHandCursor)
         login_button.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.login_page))
         
@@ -291,7 +343,7 @@ class MainWindow(QMainWindow):
         layout.setAlignment(Qt.AlignCenter)
         
         title = QLabel("Desbloquear Bóveda")
-        title.setStyleSheet("font-size: 24px; font-weight: bold;")
+        title.setObjectName("pageTitle")
         title.setAlignment(Qt.AlignCenter)
 
         self.login_username = QLineEdit()
@@ -305,7 +357,7 @@ class MainWindow(QMainWindow):
         unlock_button.clicked.connect(self.handle_unlock)
 
         setup_button = QPushButton("¿No tienes bóveda? Crear una")
-        setup_button.setStyleSheet("background-color: transparent; border: none; color: #61afef;") 
+        setup_button.setObjectName("linkButton")
         setup_button.setCursor(Qt.PointingHandCursor)
         setup_button.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.setup_page))     
         
@@ -371,10 +423,13 @@ class MainWindow(QMainWindow):
 
         # Botones de accion de detalles
         pass_actions_layout = QHBoxLayout()
-        copy_user_btn = QPushButton("📋 Copiar usuario")
-        copy_pass_btn = QPushButton("📋 Copiar contraseña")
-        self.toggle_pass_btn = QPushButton("👁️ Mostrar")
+        copy_user_btn = QPushButton("Copiar usuario")
+        copy_user_btn.setIcon(self.icons["copy_user"])
+        copy_pass_btn = QPushButton("Copiar contraseña")
+        copy_pass_btn.setIcon(self.icons["copy_pass"])
+        self.toggle_pass_btn = QPushButton("Mostrar")
         self.toggle_pass_btn.setObjectName("togglePassButton")
+        self._update_password_toggle(False)
         pass_actions_layout.addWidget(copy_user_btn)
         pass_actions_layout.addWidget(copy_pass_btn)
         pass_actions_layout.addWidget(self.toggle_pass_btn)
@@ -385,8 +440,11 @@ class MainWindow(QMainWindow):
         # Botones de gestion de entradas
         entry_actions_layout = QHBoxLayout()
         add_btn = QPushButton("Añadir Nueva")
+        add_btn.setIcon(self.icons["add_entry"])
         edit_btn = QPushButton("Editar")
+        edit_btn.setIcon(self.icons["edit_entry"])
         delete_btn = QPushButton("Eliminar")
+        delete_btn.setIcon(self.icons["delete_entry"])
         entry_actions_layout.addWidget(add_btn)
         entry_actions_layout.addWidget(edit_btn)
         entry_actions_layout.addWidget(delete_btn)
@@ -394,11 +452,11 @@ class MainWindow(QMainWindow):
         edit_btn.clicked.connect(self.edit_entry)
         delete_btn.clicked.connect(self.delete_entry)
         
-        right_layout.addWidget(QLabel("Servicio 🌐:"))
+        right_layout.addWidget(QLabel("Servicio:"))
         right_layout.addWidget(self.details_service)
-        right_layout.addWidget(QLabel("Usuario 👤:"))
+        right_layout.addWidget(QLabel("Usuario:"))
         right_layout.addWidget(self.details_username)
-        right_layout.addWidget(QLabel("Contraseña 🔒:"))
+        right_layout.addWidget(QLabel("Contraseña:"))
         right_layout.addWidget(self.details_password)
         right_layout.addLayout(pass_actions_layout)
         right_layout.addStretch()
@@ -415,35 +473,112 @@ class MainWindow(QMainWindow):
         confirm_pass = self.setup_confirm_pass.text()
         if not username:
             QMessageBox.warning(self, "Error", "El nombre de usuario no puede estar vacío.")
+            self.statusBar().showMessage("Nombre de usuario vacío.", 5000)
             return
         if not master_pass or master_pass != confirm_pass:
             QMessageBox.warning(self, "Error", "Las contraseñas no coinciden o están vacías.")
+            self.statusBar().showMessage("Las contraseñas no coinciden.", 5000)
             return
         
-        if crypto_engine.create_vault(username, master_pass):
-            # Desbloquear automaticamente tras crear
-            self.handle_unlock(username=username, password=master_pass)
+        self.show_loading("Creando bóveda...")
 
-    def handle_unlock(self):
+        def on_success(result):
+            self.hide_loading()
+            if result is not None:
+                self._apply_vault_data(result)
+                self.statusBar().showMessage("Bóveda creada y sincronizada.", 5000)
+            else:
+                QMessageBox.critical(self, "Error", "No se pudo crear la bóveda. Intenta nuevamente.")
+                self.statusBar().showMessage("Fallo al crear la bóveda.", 5000)
 
-        username = self.login_username.text()
-        master_pass = self.login_master_pass.text()
+        self.run_backend_task(
+            crypto_engine.create_vault,
+            on_success,
+            lambda err: self._handle_backend_error(err, "crear la bóveda"),
+            username,
+            master_pass
+        )
+
+    def handle_unlock(self, username=None, password=None):
+
+        username = username or self.login_username.text()
+        master_pass = password or self.login_master_pass.text()
         if not username or not master_pass:
             QMessageBox.warning(self, "Error", "El nombre de usuario y la contraseña maestra no pueden estar vacíos.")
+            self.statusBar().showMessage("Credenciales incompletas.", 5000)
             return
 
         # Este print es mucho más útil para depurar
         print(f"Desbloqueando... Usuario: '{username}', Contraseña: '{master_pass}'")
-        data = crypto_engine.unlock_vault(username, master_pass)
-        
-        if data:
-            self.vault_data = data
-            self.populate_table()
-            self.stacked_widget.setCurrentWidget(self.vault_page)
-            self.login_master_pass.clear()
-            self.login_username.clear() # Limpiar también el usuario
-        else:
-            QMessageBox.critical(self, "Error", "Usuario o Contraseña Maestra incorrecta.")
+        self.show_loading("Sincronizando bóveda...")
+
+        def on_success(data):
+            self.hide_loading()
+            if data is not None:
+                self._apply_vault_data(data)
+                self.statusBar().showMessage("Bóveda sincronizada correctamente.", 5000)
+            else:
+                QMessageBox.critical(self, "Error", "Usuario o Contraseña Maestra incorrecta.")
+                self.statusBar().showMessage("No se pudo desbloquear la bóveda.", 5000)
+
+        self.run_backend_task(
+            crypto_engine.unlock_vault,
+            on_success,
+            lambda err: self._handle_backend_error(err, "desbloquear la bóveda"),
+            username,
+            master_pass
+        )
+
+    def show_loading(self, message):
+        if self.loading_dialog is None:
+            self.loading_dialog = QProgressDialog(message, None, 0, 0, self)
+            self.loading_dialog.setWindowTitle("Por favor espera")
+            self.loading_dialog.setWindowModality(Qt.ApplicationModal)
+            self.loading_dialog.setCancelButton(None)
+            self.loading_dialog.setMinimumDuration(0)
+        self.loading_dialog.setLabelText(message)
+        self.loading_dialog.show()
+        QApplication.processEvents()
+
+    def hide_loading(self):
+        if self.loading_dialog:
+            self.loading_dialog.hide()
+
+    def run_backend_task(self, func, on_success, on_error, *args, **kwargs):
+        worker = Worker(func, *args, **kwargs)
+        self._workers.append(worker)
+
+        def cleanup(*_):
+            if worker in self._workers:
+                self._workers.remove(worker)
+
+        def handle_success(result):
+            cleanup()
+            on_success(result)
+
+        def handle_error(message):
+            cleanup()
+            on_error(message)
+
+        worker.signals.finished.connect(handle_success)
+        worker.signals.error.connect(handle_error)
+        self.thread_pool.start(worker)
+
+    def _apply_vault_data(self, data):
+        self.vault_data = data
+        self.populate_table()
+        self.stacked_widget.setCurrentWidget(self.vault_page)
+        self.login_master_pass.clear()
+        self.login_username.clear()
+
+    def _handle_backend_error(self, message, context):
+        self.hide_loading()
+        QMessageBox.critical(
+            self,
+            "Error",
+            f"No se pudo {context}.\nDetalle: {message}"
+        )
+        self.statusBar().showMessage("Error en la operación.", 5000)
     
     def lock_vault(self):
         self.vault_data = {}
@@ -453,10 +588,12 @@ class MainWindow(QMainWindow):
 
     def populate_table(self):
         self.entries_list.clear()
-        for entry_id, data in self.vault_data.items():
+        for index, (entry_id, data) in enumerate(self.vault_data.items()):
             item = QListWidgetItem()
             card = CredentialCard()
             card.set_data(data["service"], data["username"], data["password"])
+            variant = "alt" if index % 2 else "base"
+            card.set_variant(variant)
             item.setSizeHint(card.sizeHint())
             item.setData(Qt.UserRole, entry_id)
             self.entries_list.addItem(item)
@@ -477,12 +614,13 @@ class MainWindow(QMainWindow):
             self.details_username.setText(data["username"])
             self.details_password.setText(data["password"])
             self.details_password.setEchoMode(QLineEdit.Password)
-            self.toggle_pass_btn.setText("👁️ Mostrar")
+            self._update_password_toggle(False)
 
     def clear_details(self):
         self.details_service.clear()
         self.details_username.clear()
         self.details_password.clear()
+        self._update_password_toggle(False)
         if hasattr(self, "entries_list"):
             block_state = self.entries_list.blockSignals(True)
             self.entries_list.clearSelection()
@@ -491,10 +629,33 @@ class MainWindow(QMainWindow):
     def toggle_password_visibility(self):
         if self.details_password.echoMode() == QLineEdit.Password:
             self.details_password.setEchoMode(QLineEdit.Normal)
-            self.toggle_pass_btn.setText("🙈 Ocultar")
+            self._update_password_toggle(True)
         else:
             self.details_password.setEchoMode(QLineEdit.Password)
-            self.toggle_pass_btn.setText("👁️ Mostrar")
+            self._update_password_toggle(False)
+
+    def _init_icons(self):
+        style = self.style()
+        self.icons = {
+            "copy_user": style.standardIcon(QStyle.SP_DialogOpenButton),
+            "copy_pass": style.standardIcon(QStyle.SP_DialogSaveButton),
+            "show_password": style.standardIcon(QStyle.SP_DialogYesButton),
+            "hide_password": style.standardIcon(QStyle.SP_DialogNoButton),
+            "add_entry": style.standardIcon(QStyle.SP_FileDialogNewFolder),
+            "edit_entry": style.standardIcon(QStyle.SP_FileDialogDetailedView),
+            "delete_entry": style.standardIcon(QStyle.SP_TrashIcon),
+            "lock": style.standardIcon(QStyle.SP_DialogCloseButton),
+        }
+
+    def _update_password_toggle(self, revealing: bool):
+        if not hasattr(self, "toggle_pass_btn"):
+            return
+        if revealing:
+            self.toggle_pass_btn.setText("Ocultar")
+            self.toggle_pass_btn.setIcon(self.icons["hide_password"])
+        else:
+            self.toggle_pass_btn.setText("Mostrar")
+            self.toggle_pass_btn.setIcon(self.icons["show_password"])
             
     def filter_table(self, text):
         text_lower = text.lower()
@@ -511,12 +672,21 @@ class MainWindow(QMainWindow):
         dialog = AddEditDialog(parent=self)
         if dialog.exec():
             new_data = dialog.get_data()
-            # TODO usar logica de crypto_engine para guardar y luego recargar
-            crypto_engine.save_entry(new_data)
-            QMessageBox.information(self, "exito", "Nueva credencial guardada.")
-            # recargar datos, actualizar UI
-            # self.vault_data = crypto_engine.unlock_vault(...)
-            # self.populate_table()
+            self.show_loading("Guardando credencial...")
+
+            def on_success(data):
+                self.hide_loading()
+                if data is not None:
+                    self._apply_vault_data(data)
+                    QMessageBox.information(self, "Éxito", "Nueva credencial guardada.")
+                    self.statusBar().showMessage("Credencial guardada.", 4000)
+
+            self.run_backend_task(
+                crypto_engine.save_entry,
+                on_success,
+                lambda err: self._handle_backend_error(err, "guardar la credencial"),
+                new_data
+            )
 
     def edit_entry(self):
         current_item = self.entries_list.currentItem()
@@ -530,9 +700,22 @@ class MainWindow(QMainWindow):
         dialog = AddEditDialog(entry_data=entry_data, parent=self)
         if dialog.exec():
             updated_data = dialog.get_data()
-            # TODO USAR LOGICA DE  crypto_engine para actualizar y luego recargar
-            print(f"Actualizando ID {entry_id} con {updated_data}")
-            QMessageBox.information(self, "exito", "Credencial actualizada.")
+            self.show_loading("Actualizando credencial...")
+
+            def on_success(data):
+                self.hide_loading()
+                if data is not None:
+                    self._apply_vault_data(data)
+                    QMessageBox.information(self, "Éxito", "Credencial actualizada.")
+                    self.statusBar().showMessage("Credencial actualizada.", 4000)
+
+            self.run_backend_task(
+                crypto_engine.save_entry,
+                on_success,
+                lambda err: self._handle_backend_error(err, "actualizar la credencial"),
+                updated_data,
+                entry_id=entry_id
+            )
     
     def delete_entry(self):
         current_item = self.entries_list.currentItem()
@@ -548,9 +731,21 @@ class MainWindow(QMainWindow):
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
-            crypto_engine.delete_entry(entry_id)
-            QMessageBox.information(self, "exito", "Credencial eliminada.")
-            # Recargar y repoblar
+            self.show_loading("Eliminando credencial...")
+
+            def on_success(data):
+                self.hide_loading()
+                if data is not None:
+                    self._apply_vault_data(data)
+                    QMessageBox.information(self, "Éxito", "Credencial eliminada.")
+                    self.statusBar().showMessage("Credencial eliminada.", 4000)
+
+            self.run_backend_task(
+                crypto_engine.delete_entry,
+                on_success,
+                lambda err: self._handle_backend_error(err, "eliminar la credencial"),
+                entry_id
+            )
 
 
 if __name__ == "__main__":
