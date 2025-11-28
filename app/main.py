@@ -226,7 +226,7 @@ class CredentialCard(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Administrador de Contraseñas Seguro")
+        self.setWindowTitle("Adminer")
         self.setMinimumSize(800, 600)
         self.current_theme = "dark"
         self.statusBar().showMessage("Listo")
@@ -308,6 +308,11 @@ class MainWindow(QMainWindow):
         self.setup_confirm_pass.setPlaceholderText("confirma tu contraseña maestra")
         self.setup_confirm_pass.setEchoMode(QLineEdit.Password)
         
+        #WARNING
+        self.warning_label = QLabel("⚠️ Tu contraseña maestra no puede recuperarse. Si la olvidas, perderás acceso a la bóveda.")
+        self.warning_label.setWordWrap(True)
+        self.warning_label.setAccessibleName("muted")
+
         create_button =  QPushButton("Crear Bóveda")
         create_button.clicked.connect(self.handle_create_vault)
 
@@ -332,7 +337,8 @@ class MainWindow(QMainWindow):
         container_layout.addWidget(create_button)
         container_layout.addSpacing(10)
         container_layout.addWidget(login_button)
-
+        container_layout.addSpacing(20)
+        container_layout.addWidget(self.warning_label)
         
         layout.addWidget(container)
         return widget
