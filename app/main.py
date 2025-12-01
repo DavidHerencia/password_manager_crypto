@@ -11,7 +11,7 @@ from PySide6.QtGui import QAction
 
 # self modules
 import crypto_engine
-from style_v2 import get_stylesheet
+from ui import get_stylesheet
 
 class WorkerSignals(QObject):
     finished = Signal(object)
@@ -144,84 +144,149 @@ class AddEditDialog(QDialog):
             "password": self.password_input.text()
         }
 
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QSizePolicy
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 
 class CredentialCard(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("credentialCard")
-        self.service_text = ""
-        self.username_text = ""
+        
+        # --- Estados Internos ---
+        self._is_selected = False
+        self._is_hovered = False
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(6)
+        # --- Colores (se obtendrán del stylesheet) ---
+        self._color_base_bg = ""
+        self._color_hover_bg = ""
+        self._color_selected_bg = ""
+        self._color_base_border = ""
+        self._color_hover_border = ""
+        self._color_selected_border = ""
 
-        header_layout = QHBoxLayout()
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(8)
+        # --- Configuración principal del Layout del Item ---
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(2, 2, 2, 2)
+        
+        self.container = QFrame()
+        self.container.setObjectName("cardContainer")
+        main_layout.addWidget(self.container)
+
+        card_layout = QHBoxLayout(self.container)
+        card_layout.setContentsMargins(8, 6, 8, 6)
+        card_layout.setSpacing(10)
 
         self.badge_label = QLabel("?")
         self.badge_label.setObjectName("cardBadge")
+        self.badge_label.setFixedSize(40, 40)
         self.badge_label.setAlignment(Qt.AlignCenter)
-        header_layout.addWidget(self.badge_label)
+        card_layout.addWidget(self.badge_label)
 
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(2)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        
         self.service_label = QLabel()
         self.service_label.setObjectName("cardService")
-        self.service_label.setWordWrap(True)
-        self.service_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-        self.service_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        header_layout.addWidget(self.service_label, 1)
+        info_layout.addWidget(self.service_label)
 
-        layout.addLayout(header_layout)
-
-        username_row = QHBoxLayout()
-        username_row.setSpacing(6)
+        user_layout = QHBoxLayout()
+        user_layout.setSpacing(4)
         self.username_icon = QLabel("👤")
         self.username_icon.setObjectName("cardIcon")
-        self.username_icon.setAlignment(Qt.AlignCenter)
-        self.username_icon.setFixedWidth(24)
-        username_row.addWidget(self.username_icon)
         self.username_label = QLabel()
         self.username_label.setObjectName("cardUsername")
-        self.username_label.setWordWrap(True)
-        self.username_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        username_row.addWidget(self.username_label, 1)
-        layout.addLayout(username_row)
+        user_layout.addWidget(self.username_icon)
+        user_layout.addWidget(self.username_label)
+        user_layout.addStretch()
+        info_layout.addLayout(user_layout)
 
-        password_row = QHBoxLayout()
-        password_row.setSpacing(6)
+        pass_layout = QHBoxLayout()
+        pass_layout.setSpacing(4)
         self.password_icon = QLabel("🔑")
         self.password_icon.setObjectName("cardIcon")
-        self.password_icon.setAlignment(Qt.AlignCenter)
-        self.password_icon.setFixedWidth(24)
-        password_row.addWidget(self.password_icon)
         self.password_label = QLabel()
         self.password_label.setObjectName("cardPassword")
-        self.password_label.setWordWrap(True)
-        self.password_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        password_row.addWidget(self.password_label, 1)
-        layout.addLayout(password_row)
+        pass_layout.addWidget(self.password_icon)
+        pass_layout.addWidget(self.password_label)
+        pass_layout.addStretch()
+        info_layout.addLayout(pass_layout)
 
-        self.setMinimumHeight(90)
+        card_layout.addLayout(info_layout, 1)
+        self.setMinimumHeight(65)
+
+        # Forzar la carga inicial de colores desde el stylesheet
+        self.update_style_from_palette()
+
+    def update_style_from_palette(self):
+        """Carga los colores desde las propiedades del stylesheet para uso dinámico."""
+        # Usamos valores fijos que coinciden con ui.py para evitar complejidad
+        # de leer el stylesheet parseado.
+        self._color_base_bg = "#f8faff"
+        self._color_hover_bg = "#dae5ff"
+        self._color_selected_bg = "#a6c4ff"
+        self._color_base_border = "#9babc9"
+        self._color_hover_border = "#1c57d6"
+        self._color_selected_border = "#1c57d6"
+        self._apply_style()
+
+    def _apply_style(self):
+        """Aplica el estilo al contenedor basado en los estados internos."""
+        bg_color = self._color_base_bg
+        border_color = self._color_base_border
+        border_width = 2
+        border_left_width = 2
+
+        if self._is_selected:
+            bg_color = self._color_selected_bg
+            border_color = self._color_selected_border
+            border_left_width = 5
+        elif self._is_hovered:
+            bg_color = self._color_hover_bg
+            border_color = self._color_hover_border
+
+        self.container.setStyleSheet(f"""
+            #cardContainer {{
+                background-color: {bg_color};
+                border: {border_width}px solid {border_color};
+                border-left: {border_left_width}px solid {border_color};
+                border-radius: 10px;
+            }}
+        """)
+
+    def set_selected(self, selected: bool):
+        """Método público para cambiar el estado de selección desde fuera."""
+        if self._is_selected != selected:
+            self._is_selected = selected
+            self._apply_style()
+
+    def enterEvent(self, event):
+        """El mouse ha entrado en el widget."""
+        self._is_hovered = True
+        self._apply_style()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        """El mouse ha salido del widget."""
+        self._is_hovered = False
+        self._apply_style()
+        super().leaveEvent(event)
 
     def set_data(self, service, username, password):
         self.service_text = service
         self.username_text = username
+        
         badge_char = service[:1].upper() if service else "?"
         self.badge_label.setText(badge_char)
-        self.service_label.setText(service or "(sin nombre)")
-        self.username_label.setText(username or "(sin usuario)")
-        masked_len = max(4, min(len(password), 12))
+        
+        self.service_label.setText(service or "(Sin nombre)")
+        self.username_label.setText(username or "---")
+        
+        masked_len = max(4, min(len(password), 12)) if password else 4
         mask = "•" * masked_len
         masked = " ".join(mask[i:i + 4] for i in range(0, len(mask), 4))
         self.password_label.setText(masked)
-
-    def set_variant(self, variant: str):
-        self.setProperty("variant", variant)
-        self.style().unpolish(self)
-        self.style().polish(self)
-        self.update()
-
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -276,6 +341,12 @@ class MainWindow(QMainWindow):
         # else:
         #     self.stacked_widget.setCurrentWidget(self.login_page)
         self.stacked_widget.setCurrentWidget(self.login_page)
+        
+        # DEBUG: Auto-login con credenciales por defecto
+        self.login_username.setText("admin")
+        self.login_master_pass.setText("1234")
+        # Descomenta la siguiente línea para auto-login automático:
+        # self.handle_unlock("admin", "password123")
 
     def toggle_theme(self):
         if self.current_theme == "dark":
@@ -390,8 +461,9 @@ class MainWindow(QMainWindow):
 
         # Panel izquierdo (Lista de Entradas)
         left_panel = QWidget()
+        left_panel.setObjectName("leftPanel")
         left_layout = QVBoxLayout(left_panel)
-        left_panel.setFixedWidth(360)
+        left_panel.setFixedWidth(370)
         
         search_layout = QHBoxLayout()
         self.search_bar = QLineEdit()
@@ -404,9 +476,9 @@ class MainWindow(QMainWindow):
         self.entries_list = QListWidget()
         self.entries_list.setObjectName("vaultCardList")
         self.entries_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.entries_list.setSpacing(12)
+        self.entries_list.setSpacing(2)
         self.entries_list.setUniformItemSizes(False)
-        self.entries_list.itemSelectionChanged.connect(self.display_details)
+        self.entries_list.itemSelectionChanged.connect(self.on_selection_changed)
 
         left_layout.addLayout(search_layout)
         left_layout.addWidget(self.entries_list)
@@ -598,14 +670,31 @@ class MainWindow(QMainWindow):
             item = QListWidgetItem()
             card = CredentialCard()
             card.set_data(data["service"], data["username"], data["password"])
-            variant = "alt" if index % 2 else "base"
-            card.set_variant(variant)
             item.setSizeHint(card.sizeHint())
             item.setData(Qt.UserRole, entry_id)
             self.entries_list.addItem(item)
             self.entries_list.setItemWidget(item, card)
         if self.entries_list.count() > 0:
             self.entries_list.setCurrentRow(0)
+        self.on_selection_changed()
+
+    def on_selection_changed(self):
+        """Gestiona el cambio de selección en la lista."""
+        selected_items = self.entries_list.selectedItems()
+        selected_id = None
+        if selected_items:
+            selected_id = selected_items[0].data(Qt.UserRole)
+
+        # Actualizar el estado visual de todas las tarjetas
+        for i in range(self.entries_list.count()):
+            item = self.entries_list.item(i)
+            card = self.entries_list.itemWidget(item)
+            if card:
+                entry_id = item.data(Qt.UserRole)
+                card.set_selected(entry_id == selected_id)
+        
+        # Mostrar detalles del elemento seleccionado
+        self.display_details()
 
     def display_details(self):
         current_item = self.entries_list.currentItem()
@@ -756,7 +845,7 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    app.setStyleSheet(get_stylesheet("dark")) # dark mode default 
+    app.setStyleSheet(get_stylesheet()) # dark mode default 
     
     window = MainWindow()
     window.show()

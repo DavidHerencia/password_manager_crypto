@@ -4,15 +4,18 @@
 
 import random
 import string
+import secrets
 import requests
 from argon2 import PasswordHasher
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 import os
 import json
+from pathlib import Path
 
-# Pepper global (debería ser secreto y fijo, idealmente en config segura)
-PEPPER = "pepper_super_secreto"  # Cambia esto por un valor seguro y mantenlo fuera del código fuente
+# Carpeta local para almacenar secretos del cliente (pepper y salt locales)
+CONFIG_DIR = Path.home() / ".password_manager_crypto"
+CLIENT_SECRETS_FILE = CONFIG_DIR / "client_secrets.json"
 
 BACKEND_URL = "http://localhost:8000"  # Cambia si tu backend está en otro host/puerto
 ph = PasswordHasher()
@@ -27,15 +30,62 @@ vault_data = {}
 master_key = None
 username_cache = None
 
+_client_secrets_cache: dict[str, str] | None = None
+
+
+def _load_or_create_client_secrets() -> dict[str, str]:
+    """Obtiene (o genera) el pepper y salt locales del cliente."""
+    global _client_secrets_cache
+
+    if _client_secrets_cache is not None:
+        return _client_secrets_cache
+
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        if os.name != "nt":
+            CONFIG_DIR.chmod(0o700)
+    except Exception as exc:
+        raise RuntimeError("No se pudo preparar la carpeta de configuración local") from exc
+
+    if CLIENT_SECRETS_FILE.exists():
+        try:
+            with CLIENT_SECRETS_FILE.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception as exc:
+            raise RuntimeError("No se pudo leer el archivo de secretos del cliente") from exc
+
+        if not isinstance(data, dict) or "pepper" not in data or "client_salt" not in data:
+            raise RuntimeError("El archivo de secretos del cliente no tiene el formato esperado")
+
+        _client_secrets_cache = data
+        return data
+
+    secrets_payload = {
+        "pepper": secrets.token_hex(32),
+        "client_salt": secrets.token_hex(32)
+    }
+
+    with CLIENT_SECRETS_FILE.open("w", encoding="utf-8") as fh:
+        json.dump(secrets_payload, fh)
+
+    if os.name != "nt":
+        os.chmod(CLIENT_SECRETS_FILE, 0o600)
+
+    _client_secrets_cache = secrets_payload
+    return secrets_payload
+
 def set_token(jwt):
     global token
     token = jwt
     session.headers.update({"Authorization": f"Bearer {jwt}"})
 
-def derive_key(password: str, salt: bytes, pepper: str = PEPPER) -> bytes:
-    # Usa Argon2id para derivar la clave AES-256, combinando password+pepper
+def derive_key(password: str, salt: bytes) -> bytes:
+    # Usa Argon2id para derivar la clave AES-256, combinando password y secretos locales
     from argon2.low_level import hash_secret_raw, Type
-    secret = (password + pepper).encode()
+    secrets_payload = _load_or_create_client_secrets()
+    pepper_bytes = bytes.fromhex(secrets_payload["pepper"])
+    client_salt_bytes = bytes.fromhex(secrets_payload["client_salt"])
+    secret = password.encode("utf-8") + pepper_bytes + client_salt_bytes
     return hash_secret_raw(
         secret, salt,
         time_cost=3, memory_cost=65536, parallelism=2, hash_len=32, type=Type.ID
@@ -61,17 +111,54 @@ def encrypt_vault(vault_dict, password, salt=None):
 
 def decrypt_vault(blob, password):
     try:
-        salt = bytes.fromhex(blob["salt"])
-        nonce = bytes.fromhex(blob["nonce"])
-        ciphertext = bytes.fromhex(blob["ciphertext"])
-        tag = bytes.fromhex(blob["tag"])
+        salt_hex = blob["salt"]
+        nonce_hex = blob["nonce"]
+        ciphertext_hex = blob["ciphertext"]
+        tag_hex = blob["tag"]
+    except KeyError as exc:
+        print(f"Campos faltantes en el blob cifrado: {exc}")
+        return {}
+
+    try:
+        salt = bytes.fromhex(salt_hex)
+        nonce = bytes.fromhex(nonce_hex)
+        ciphertext = bytes.fromhex(ciphertext_hex)
+        tag = bytes.fromhex(tag_hex)
+    except ValueError as exc:
+        print(f"Formato inválido en el blob cifrado: {exc}")
+        return {}
+
+    ct = ciphertext + tag
+
+    try:
         key = derive_key(password, salt)
         aesgcm = AESGCM(key)
-        ct = ciphertext + tag
         data = aesgcm.decrypt(nonce, ct, None)
         return json.loads(data.decode())
     except Exception as e:
-        print(f"Error descifrando vault: {e}")
+        print(f"Error descifrando vault con secretos locales: {e}")
+
+    # Intento de compatibilidad con versiones anteriores que usaban un pepper global fijo
+    try:
+        from argon2.low_level import hash_secret_raw, Type
+
+        legacy_secret = (password + "pepper_super_secreto").encode("utf-8")
+        legacy_key = hash_secret_raw(
+            legacy_secret,
+            salt,
+            time_cost=3,
+            memory_cost=65536,
+            parallelism=2,
+            hash_len=32,
+            type=Type.ID,
+        )
+        aesgcm = AESGCM(legacy_key)
+        ct = ciphertext + tag
+        data = aesgcm.decrypt(nonce, ct, None)
+        print("Vault descifrado con pepper legado; se rotará al guardar cambios.")
+        return json.loads(data.decode())
+    except Exception as legacy_error:
+        print(f"Error descifrando vault con pepper legado: {legacy_error}")
         return {}
 
 def create_vault(username, master_password):
