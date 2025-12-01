@@ -1,28 +1,10 @@
+
 # ---------------------------------------------------------
-# Windows XP-inspired classic theme (high contrast + bevels)
+# Tema claro por defecto (sin soporte para temas)
 # ---------------------------------------------------------
 
 BASE_FONT = "'Tahoma', 'Segoe UI', Arial"
 
-# Dark "midnight" variant
-dark = {
-    "bg": "#111a2d",
-    "panel": "#1a2741",
-    "panel_high": "#233554",
-    "text": "#f8fbff",
-    "muted": "#c7d0e6",
-    "accent": "#2d6de1",
-    "accent_alt": "#4b82f0",
-    "border": "#0a1433",
-    "header": "#142443",
-    "selection": "#6fa0ff",
-    "shadow": "#030814",
-    "list_bg": "#0c1526",
-    "card_base": "#1f2f4c",
-    "card_alt": "#2e4675",
-}
-
-# Light "silver" variant
 light = {
     "bg": "#dde6f7",
     "panel": "#edf2ff",
@@ -47,8 +29,8 @@ def _gradient(top_color: str, bottom_color: str) -> str:
         f"{top_color}, stop:1 {bottom_color})"
     )
 
-def get_stylesheet(theme: str = "dark") -> str:
-    palette = dark if theme == "dark" else light
+def get_stylesheet() -> str:
+    palette = light
     bg = palette["bg"]
     panel = palette["panel"]
     panel_high = palette["panel_high"]
@@ -191,99 +173,25 @@ def get_stylesheet(theme: str = "dark") -> str:
         }}
 
         QListWidget {{
-            background-color: {list_bg};
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f0f4ff, stop:1 #e8ecff);
             border: 1px solid {border};
-            border-radius: 8px;
-            alternate-background-color: {panel_high};
-            padding: 6px;
+            border-radius: 12px;
+            outline: none;
+            padding: 8px;
         }}
 
         QListWidget::item {{
-            padding: 2px;
-            margin-bottom: 8px;
-            border-radius: 10px;
+            background: transparent;
+            border: none;
+            padding: 0px;
+            margin: 0px;
         }}
 
         QListWidget::item:selected {{
-            background-color: {selection};
-            color: #0b1634;
-            border: 1px solid {accent};
-            padding: 0;
+            background: transparent;
         }}
 
-        QWidget#credentialCard {{
-            background: {card_base};
-            border: 1px solid {border};
-            border-radius: 8px;
-            padding: 12px;
-            border-left: 4px solid {border};
-        }}
-
-        QWidget#credentialCard[variant="base"] {{
-            background: {card_base};
-            border-color: {border};
-            border-left-color: {border};
-        }}
-
-        QWidget#credentialCard[variant="base"] QLabel#cardBadge {{
-            background: {button_grad};
-        }}
-
-        QWidget#credentialCard[variant="alt"] {{
-            background: {card_alt};
-            border-color: {accent};
-            border-left-color: {accent_alt};
-        }}
-
-        QWidget#credentialCard[variant="alt"] QLabel#cardBadge {{
-            background: {accent_grad};
-        }}
-
-        QWidget#credentialCard QLabel {{
-            color: {text};
-        }}
-
-        QWidget#credentialCard:hover {{
-            border-color: {accent};
-        }}
-
-        QLabel#cardBadge {{
-            min-width: 28px;
-            max-width: 28px;
-            min-height: 28px;
-            max-height: 28px;
-            border-radius: 4px;
-            background: {accent_grad};
-            color: #fff;
-            font-weight: bold;
-            font-size: 13px;
-            text-align: center;
-        }}
-
-        QLabel#cardIcon {{
-            min-width: 24px;
-            max-width: 24px;
-            text-align: center;
-            color: {muted};
-            font-size: 16px;
-        }}
-
-        QLabel#cardService {{
-            font-weight: 600;
-            padding-right: 8px;
-        }}
-
-        QLabel#cardUsername {{
-            color: {muted};
-            padding-bottom: 2px;
-        }}
-
-        QLabel#cardPassword {{
-            font-family: 'Consolas', 'Courier New', monospace;
-            letter-spacing: 2px;
-            color: {accent};
-        }}
-
+        
         QSlider::groove:horizontal {{
             background: {panel_high};
             border: 1px solid {border};
@@ -365,20 +273,28 @@ def get_stylesheet(theme: str = "dark") -> str:
         }}
 
         QScrollBar:vertical {{
-            background: {panel};
-            width: 14px;
+            background: #f0f4ff;
+            width: 18px;
             margin: 0;
-            border: 1px solid {border};
+            border: none;
         }}
 
         QScrollBar::handle:vertical {{
-            background: {button_grad};
+            background: {accent};
             min-height: 24px;
-            border: 1px solid {border};
+            border: none;
+            border-radius: 9px;
+            margin: 2px;
         }}
 
         QScrollBar::handle:vertical:hover {{
-            background: {accent_grad};
+            background: {accent_alt};
+            width: 20px;
+        }}
+
+        QScrollBar::sub-line:vertical, QScrollBar::add-line:vertical {{
+            border: none;
+            background: none;
         }}
 
         QScrollBar::up-arrow, QScrollBar::down-arrow {{
@@ -387,8 +303,49 @@ def get_stylesheet(theme: str = "dark") -> str:
             height: 10px;
             background: transparent;
         }}
-        
-        QListWidget::item {{
-            background: #edf2ff;
+
+        /* El contenedor real de la tarjeta - ESTILO BASE */
+        #cardContainer {{
+            background-color: {card_base};
+            border: 2px solid {border};
+            border-radius: 10px;
+            padding: 12px;
+            margin: 1px 0px;
+            border-bottom: 3px solid {shadow};
+        }}
+
+        /* Panel lateral izquierdo */
+        #leftPanel {{
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #f5f8ff, stop:1 #eef2ff);
+            border-right: 2px solid {border};
+        }}
+
+        /* El Badge Circular */
+        #cardBadge {{
+            background-color: {accent_alt};
+            color: white;
+            border-radius: 20px; /* La mitad del tamaño fijo (40px) para hacerlo círculo */
+            font-weight: bold;
+            font-size: 18px;
+        }}
+
+        /* Título del servicio */
+        #cardService {{
+            font-weight: bold;
+            font-size: 14px;
+            color: {text};
+        }}
+
+        /* Usuario y Password (más sutiles) */
+        #cardUsername, #cardPassword {{
+            font-size: 12px;
+            color: {muted};
+        }}
+
+        /* Iconos pequeños */
+        #cardIcon {{
+            font-size: 10px;
+            color: {muted};
+            background: transparent;
         }}
     """

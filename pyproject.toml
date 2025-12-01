@@ -4,4 +4,12 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "argon2-cffi>=25.1.0",
+    "cryptography>=46.0.3",
+    "fastapi>=0.122.0",
+    "python-jose>=3.5.0",
+    "python-multipart>=0.0.20",
+    "requests>=2.32.5",
+    "uvicorn>=0.38.0",
+]
