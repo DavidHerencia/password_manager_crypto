@@ -211,3 +211,5 @@ __marimo__/
 
 xp.py
 xp2.py
+
+*.db
