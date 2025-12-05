@@ -13,20 +13,6 @@ Este documento detalla el diseño de un administrador de contraseñas de escrito
 ## 3. Arquitectura General
 La solución se compone de un cliente de escritorio nativo y una API REST minimalista que se comunican exclusivamente a través de un canal seguro (TLS).
 
-```
-┌──────────────────┐     TLS (HTTPS)     ┌────────────────────────────┐
-│  Cliente Desktop │───────────────────▶ │       Servidor API REST    │
-│  - UI (Python)   │ ◀─────────────────── │ - Autenticación (JWT)      │
-│  - Criptografía  │                     │ - Almacenamiento de Blobs  │
-└────────┬─────────┘                     └────────────┬───────────────┘
-         │                                            │
-         │ 1. KDF con Argon2id (Client-Side)          │ 2. Persistencia de Datos Cifrados
-         ▼                                            ▼
-┌──────────────────┐                        ┌────────────────────────────┐
-│  Clave Derivada  │                        │ Base de Datos (PostgreSQL) │
-│ (Solo en memoria)│                        │ (salt + nonce + ciphertext + tag) │
-└──────────────────┘                        └────────────────────────────┘
-```
 
 - **Cliente (Desktop)**: Aplicación responsable de toda la lógica criptográfica. Gestiona la interfaz de usuario, deriva la clave de cifrado a partir de la contraseña maestra, cifra y descifra el vault localmente. **La contraseña maestra y la clave de cifrado nunca abandonan el cliente.**
 - **Servidor (API REST)**: Su única función es (1) autenticar al usuario y emitir un token de sesión (JWT), y (2) almacenar y servir un único blob de datos cifrados por usuario. No tiene conocimiento alguno sobre el contenido del blob.
