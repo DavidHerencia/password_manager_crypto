@@ -13,7 +13,10 @@ from dotenv import load_dotenv
 import database
 # --- Configuración ---
 load_dotenv()
+
+#LIST ALL ENV VARIABLES
 env_secret = os.environ.get("JWT_SECRET_KEY")
+
 if not env_secret:
     raise RuntimeError("JWT_SECRET_KEY environment variable must be set")
 SECRET_KEY: str = env_secret

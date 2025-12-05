@@ -396,9 +396,9 @@ class MainWindow(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.login_page)
         
         # DEBUG: Auto-login con credenciales por defecto
-        self.login_username.setText("admin")
-        self.login_auth_pass.setText("admin-access")
-        self.login_master_pass.setText("1234")
+        #self.login_username.setText("admin")
+        #self.login_auth_pass.setText("admin-access")
+        #self.login_master_pass.setText("1234")
         # Descomenta la siguiente línea para auto-login automático:
         # self.handle_unlock("admin", "password123")
 
@@ -647,7 +647,7 @@ class MainWindow(QMainWindow):
             self.hide_loading()
             if result is not None:
                 self._apply_vault_data(result)
-                self._maybe_show_local_secret_dialog(force=True)
+                self._maybe_show_local_secret_dialog(username, force=True)
                 self.statusBar().showMessage("Bóveda creada y sincronizada.", 5000)
             else:
                 QMessageBox.critical(self, "Error", "No se pudo crear la bóveda. Intenta nuevamente.")
@@ -682,7 +682,7 @@ class MainWindow(QMainWindow):
                 self._apply_vault_data(data)
                 self.statusBar().showMessage("Bóveda sincronizada correctamente.", 5000)
             else:
-                QMessageBox.critical(self, "Error", "Usuario o Contraseña Maestra incorrecta.")
+                QMessageBox.critical(self, "Error", "Usuario o contraseña(s) incorrecta.")
                 self.statusBar().showMessage("No se pudo desbloquear la bóveda.", 5000)
 
         self.run_backend_task(
@@ -737,8 +737,11 @@ class MainWindow(QMainWindow):
         self.login_master_pass.clear()
         self.login_username.clear()
 
-    def _maybe_show_local_secret_dialog(self, force: bool = False):
-        secret_info = crypto_engine.get_local_secret_material(reset_flag=not force)
+    def _maybe_show_local_secret_dialog(self, username: str | None = None, force: bool = False):
+        username = username or crypto_engine.username_cache
+        if not username:
+            return
+        secret_info = crypto_engine.get_local_secret_material(username, reset_flag=not force)
         if not force and not secret_info.get("generated_now"):
             return
         pepper = str(secret_info.get("pepper", ""))
