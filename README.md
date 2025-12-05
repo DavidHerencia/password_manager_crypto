@@ -72,6 +72,7 @@ flowchart TB
         C{"Key Derivation"}
         U["User login"]
         S["Server Salt"]
+        P["User Pepper"]
         K["Derived Key 256-bit"]
         ENC["AES-256-GCM Encrypt"]
         V_PT["Vault Plaintext"]
@@ -85,6 +86,7 @@ flowchart TB
         DB["Database: salt + nonce + ciphertext + auth_tag"]
   end
     U -- Master Password --> C
+    P --> C
     S --> C
     C -- Argon2id --> K
     V_PT --> ENC
