@@ -8,7 +8,7 @@
 | **Semestre** | 2025-2 |
 | **Universidad** | UTEC |
 | **Repositorio** | [GitHub - DavidHerencia/password_manager_crypto](https://github.com/DavidHerencia/password_manager_crypto) |
-| **Rama Principal** | `acl` |
+| **Rama Principal** | `v2` |
 
 ---
 
