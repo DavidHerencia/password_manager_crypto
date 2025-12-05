@@ -110,7 +110,7 @@ flowchart TB
  subgraph subGraph1["Server"]
         DB["Database: salt + nonce + ciphertext + auth_tag"]
   end
-    U -- Master Password --> C
+    U -- Auth Password --> C
     P --> C
     S --> C
     C -- Argon2id --> K
