@@ -31,11 +31,12 @@ master_key = None
 username_cache = None
 
 _client_secrets_cache: dict[str, str] | None = None
+_client_secrets_recently_created = False
 
 
 def _load_or_create_client_secrets() -> dict[str, str]:
     """Obtiene (o genera) el pepper y salt locales del cliente."""
-    global _client_secrets_cache
+    global _client_secrets_cache, _client_secrets_recently_created
 
     if _client_secrets_cache is not None:
         return _client_secrets_cache
@@ -58,6 +59,7 @@ def _load_or_create_client_secrets() -> dict[str, str]:
             raise RuntimeError("El archivo de secretos del cliente no tiene el formato esperado")
 
         _client_secrets_cache = data
+        _client_secrets_recently_created = False
         return data
 
     secrets_payload = {
@@ -72,7 +74,24 @@ def _load_or_create_client_secrets() -> dict[str, str]:
         os.chmod(CLIENT_SECRETS_FILE, 0o600)
 
     _client_secrets_cache = secrets_payload
+    _client_secrets_recently_created = True
     return secrets_payload
+
+
+def get_local_secret_material(reset_flag: bool = True) -> dict[str, str | bool]:
+    """Retorna pepper/salt locales y si fueron creados en esta sesión."""
+    global _client_secrets_recently_created
+
+    secrets_payload = _load_or_create_client_secrets()
+    generated_now = _client_secrets_recently_created
+    if reset_flag:
+        _client_secrets_recently_created = False
+    return {
+        "pepper": secrets_payload["pepper"],
+        "client_salt": secrets_payload["client_salt"],
+        "generated_now": generated_now,
+        "config_path": str(CLIENT_SECRETS_FILE)
+    }
 
 def set_token(jwt):
     global token
@@ -161,12 +180,15 @@ def decrypt_vault(blob, password):
         print(f"Error descifrando vault con pepper legado: {legacy_error}")
         return {}
 
-def create_vault(username, master_password):
+def create_vault(username, auth_password, master_password):
     global vault_data, master_key, username_cache, last_salt
     try:
-        resp = session.post(f"{BACKEND_URL}/api/users", json={"username": username, "password": master_password})
+        resp = session.post(
+            f"{BACKEND_URL}/api/users",
+            json={"username": username, "auth_password": auth_password}
+        )
         if resp.status_code == 400 and "User exists" in resp.text:
-            return unlock_vault(username, master_password)
+            return unlock_vault(username, auth_password, master_password)
         resp.raise_for_status()
         data = resp.json()
         salt_hex = data.get("salt_kdf")
@@ -184,18 +206,21 @@ def create_vault(username, master_password):
     # Subir vault vacío cifrado (salt nuevo)
     blob = encrypt_vault(vault_data, master_password, salt=last_salt)
     try:
-        unlock_vault(username, master_password)  # login y set_token
+        unlock_vault(username, auth_password, master_password)  # login y set_token
         resp = session.put(f"{BACKEND_URL}/api/vault", json=blob)
         resp.raise_for_status()
     except Exception as e:
         print(f"Error subiendo vault inicial: {e}")
         return None
-    return unlock_vault(username, master_password)
+    return unlock_vault(username, auth_password, master_password)
 
-def unlock_vault(username, master_password):
+def unlock_vault(username, auth_password, master_password):
     global vault_data, master_key, username_cache, last_salt
     try:
-        resp = session.post(f"{BACKEND_URL}/api/token", data={"username": username, "password": master_password})
+        resp = session.post(
+            f"{BACKEND_URL}/api/token",
+            data={"username": username, "password": auth_password}
+        )
         if resp.status_code != 200:
             print("Login fallido", resp.text)
             return None

@@ -23,13 +23,13 @@ def init_db():
 
 # --- Funciones de Usuario ---
 
-def create_user(username: str, hashed_pass: str, salt_kdf: str) -> bool:
+def create_user(username: str, auth_hash: str, salt_kdf: str) -> bool:
     """Crea un nuevo usuario en la tabla 'users'."""
     conn = get_db_connection()
     try:
         conn.execute(
             "INSERT INTO users (username, hash, salt_kdf) VALUES (?, ?, ?)",
-            (username, hashed_pass, salt_kdf)
+            (username, auth_hash, salt_kdf)
         )
         conn.commit()
         return True

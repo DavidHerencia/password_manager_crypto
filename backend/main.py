@@ -26,7 +26,7 @@ class Token(BaseModel):
 
 class UserCreate(BaseModel):
     username: str
-    password: str
+    auth_password: str
 
 class VaultBlob(BaseModel):
     # Incluye los parámetros necesarios para reconstruir la llave y descifrar el vault
@@ -50,8 +50,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     """Decodifica el token JWT para obtener el usuario actual."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        username = payload.get("sub")
+        if not isinstance(username, str):
             raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
         
         # Verificar que el usuario todavía existe en la BD
@@ -77,9 +77,9 @@ def register(user: UserCreate):
         raise HTTPException(status_code=400, detail="User already exists")
     
     salt_kdf = os.urandom(16).hex()
-    hashed_password = ph.hash(user.password)
+    hashed_auth_password = ph.hash(user.auth_password)
     
-    success = database.create_user(user.username, hashed_password, salt_kdf)
+    success = database.create_user(user.username, hashed_auth_password, salt_kdf)
     if not success:
         raise HTTPException(status_code=500, detail="Could not create user")
         

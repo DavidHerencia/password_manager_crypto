@@ -33,16 +33,55 @@ La solución se compone de un cliente de escritorio nativo y una API REST minima
 
 ## 4. Flujos Criptográficos Detallados
 
-### 4.1. Derivación de Clave de Cifrado (KDF)
-La clave que cifra el vault se deriva en el cliente utilizando un KDF (Key Derivation Function) robusto para resistir ataques de fuerza bruta offline.
-- **Algoritmo**: **Argon2id**.
-- **Entradas**:
-    1.  **Contraseña Maestra**: Proporcionada por el usuario.
-    2.  **Salt**: 16 bytes generados aleatoriamente durante el registro del usuario. Se almacena en el servidor junto al vault cifrado.
-- **Parámetros de Argon2id**: `time_cost=3`, `memory_cost=65536` (64 MB), `parallelism=2`, `hash_len=32` (para una clave AES-256).
-- **Salida**: Una clave de cifrado simétrica de 32 bytes (`Derived Key`).
+### 4.1. Separación de Contraseñas (Autenticación vs Cifrado)
+El sistema utiliza **dos contraseñas diferentes** y la interfaz ya obliga a introducirlas y confirmarlas por separado:
 
-### 4.2. Cifrado y Descifrado del Vault (AEAD)
+| Contraseña | Propósito | Almacenamiento |
+|------------|-----------|----------------|
+| **Contraseña de Acceso** | Autenticación con el servidor (endpoint `/api/token`) | Hash Argon2id (`time_cost=3`, `memory_cost=65536 KB`, `parallelism=4`) |
+| **Contraseña Maestra** | Cifrado/descifrado del vault (AES-256-GCM) | **Nunca abandona el cliente** |
+
+> ⚠️ **IMPORTANTE**: La contraseña maestra no puede recuperarse. El cliente advierte al usuario durante el registro y el login que debe mantener contraseñas distintas y seguras; perder la contraseña maestra implica perder definitivamente el acceso al vault.
+
+### 4.2. Almacenamiento de Identidad (Hash de Contraseña)
+La contraseña de acceso (la única que llega al backend) se almacena de forma segura:
+- **Algoritmo**: Argon2id (ganador del Password Hashing Competition)
+- **Librería**: `argon2-cffi` con `PasswordHasher()`
+- **Parámetros efectivos** (idénticos en registro e inicio de sesión):
+  - `time_cost`: 3 iteraciones (KDF iteraciones requeridas por la entrega)
+  - `memory_cost`: 65536 KB (64 MB)
+  - `parallelism`: 4 hilos
+  - `hash_len`: 32 bytes
+  - `salt_len`: 16 bytes (autogenerado en servidor)
+- **Formato almacenado**: `$argon2id$v=19$m=65536,t=3,p=4$<salt>$<hash>`
+
+### 4.3. Derivación de Clave de Cifrado (KDF)
+La clave que cifra el vault se deriva en el cliente utilizando un KDF robusto para resistir ataques de fuerza bruta offline.
+- **Algoritmo**: **Argon2id** (`hash_secret_raw`)
+- **Entradas**:
+    1.  **Contraseña Maestra**: Proporcionada por el usuario
+    2.  **Salt del Servidor**: 16 bytes generados en el registro
+    3.  **Pepper Local**: 32 bytes almacenados en `~/.password_manager_crypto/`
+    4.  **Salt Local del Cliente**: 32 bytes adicionales
+- **Parámetros de Argon2id**: `time_cost=3`, `memory_cost=65536` (64 MB), `parallelism=2`, `hash_len=32`
+- **Salida**: Una clave de cifrado simétrica de 32 bytes (`Derived Key`)
+
+### 4.4. Secreto Local (PEPPER) - Defensa contra Ataques de Adivinanza
+Para mitigar ataques de diccionario y fuerza bruta incluso si el atacante obtiene el vault cifrado y el salt del servidor, el cliente combina la contraseña con secretos locales:
+
+```
+~/.password_manager_crypto/client_secrets.json
+├── pepper: 256 bits (32 bytes hex)
+└── client_salt: 256 bits (32 bytes hex)
+```
+
+- **Generación**: `secrets.token_hex(32)` (CSPRNG del sistema)
+- **Permisos**: Directorio `0o700`, archivo `0o600`
+- **Beneficio**: Un atacante necesita tanto el vault cifrado como los secretos locales del cliente para intentar un ataque de fuerza bruta
+- **UX**: Cuando se crea una bóveda y se genera un nuevo pepper, la aplicación muestra un diálogo con el valor en hex, un botón para copiarlo y una advertencia para guardarlo offline. También se indica la ruta exacta del archivo local para que el usuario pueda respaldarlo manualmente.
+
+
+### 4.5. Cifrado y Descifrado del Vault (AEAD)
 Para garantizar tanto la confidencialidad como la integridad, se utiliza un modo de cifrado autenticado.
 - **Algoritmo**: **AES-256-GCM (Galois/Counter Mode)**.
 - **Clave**: La `Derived Key` de 32 bytes generada por Argon2id.
@@ -52,16 +91,16 @@ Para garantizar tanto la confidencialidad como la integridad, se utiliza un modo
     2.  **Almacenamiento**: El cliente sube al servidor el `salt`, el `nonce`, el `ciphertext` y el `auth_tag`.
     3.  **Descifrado**: Al cargar, el cliente descarga el blob, recalcula la `Derived Key` y utiliza AES-GCM para verificar el `auth_tag` y descifrar el `ciphertext`. Si el `tag` es inválido (los datos fueron manipulados), la operación falla de forma segura.
 
-### 4.3. Autenticación de Sesión con el Servidor (JWT)
-Para que el servidor sepa qué usuario está realizando una petición sin enviar la contraseña maestra repetidamente, se usa un flujo de tokens JWT.
+### 4.6. Autenticación de Sesión con el Servidor (JWT)
+Para que el servidor sepa qué usuario está realizando una petición sin enviar la contraseña repetidamente, se usa un flujo de tokens JWT.
 - **Login (`POST /api/token`)**:
-    1.  El cliente envía el `username` y la `contraseña maestra` a través de HTTPS.
-    2.  El servidor hashea la contraseña recibida con Argon2id (usando un salt de autenticación diferente, almacenado para este fin) y la compara con el hash de autenticación que tiene en su base de datos.
-    3.  Si la verificación es exitosa, el servidor genera un **JSON Web Token (JWT)**, firmado con una clave secreta del servidor. Este token contiene el `user_id` y una fecha de expiración corta.
+    1.  El cliente envía el `username` y la `contraseña de acceso` a través de HTTPS.
+    2.  El servidor verifica la contraseña con Argon2id contra el hash almacenado.
+    3.  Si la verificación es exitosa, el servidor genera un **JSON Web Token (JWT)**, firmado con HMAC-SHA256.
     4.  El JWT es devuelto al cliente.
 - **Peticiones Autenticadas (ej. `PUT /api/vault`)**:
     1.  Para todas las peticiones posteriores, el cliente añade una cabecera HTTP: `Authorization: Bearer <JWT>`.
-    2.  El servidor verifica la firma y la fecha de expiración de cada JWT recibido. Si es válido, confía en la identidad del `user_id` dentro del token y procesa la petición.
+    2.  El servidor verifica la firma y la fecha de expiración de cada JWT recibido.
 
 ## 5. Diagramas de Flujo
 
@@ -135,6 +174,21 @@ sequenceDiagram
     deactivate S
 
 ```
+
+### 4.7. Flujo Completo de Registro y Acceso
+1. **Registro en Frontend**
+  - El usuario introduce: `usuario`, `contraseña de acceso`, `confirmación de acceso`, `contraseña maestra`, `confirmación maestra`.
+  - La UI bloquea el alta si alguna confirmación falla e informa que la contraseña maestra no se puede recuperar.
+2. **Registro en Backend**
+  - Solo se envían `usuario` y `contraseña de acceso`.
+  - El backend aplica Argon2id (parámetros anteriores) y guarda `hash` + `salt_kdf`.
+  - Devuelve un `salt_kdf` único (16 bytes) al cliente para derivar la clave del vault.
+3. **Login**
+  - La pantalla de desbloqueo solicita la `contraseña de acceso` (para obtener el JWT) y la `contraseña maestra` (para derivar la clave AES-256-GCM).
+  - Si el JWT es válido, se descarga el blob cifrado; si la contraseña maestra falla, el descifrado no se concreta y se informa al usuario.
+4. **Persistencia de Vault**
+  - La clave derivada mezcla `contraseña maestra + pepper local + client_salt + salt_kdf` mediante Argon2id (`time_cost=3`, `memory_cost=65536 KB`, `parallelism=2`).
+  - Solo `salt`, `nonce`, `ciphertext` y `tag` llegan al backend.
 
 ### Arquitectura de Sistema Completa
 ```mermaid
