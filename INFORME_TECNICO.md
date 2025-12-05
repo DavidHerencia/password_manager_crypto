@@ -374,26 +374,41 @@ flowchart TB
 ### 4.4 Flujo Completo del Sistema
 
 ```mermaid
-flowchart TD
-    U[Usuario] -->|"master_password"| C[Desktop Client]
-    
-    C -->|"Argon2id(m_password, salt)"| K[Derived Key]
-    
-    K --> AES_ENC[AES-GCM Encrypt Vault]
-    AES_ENC --> V[Encrypted Vault]
-    
-    V -->|"Upload"| API[API Server]
-    
-    API -->|"Store"| DB[(salt + nonce + ciphertext + auth_tag)]
-    
-    API -->|"Download encrypted blob"| C
-    
-    K --> AES_DEC[AES-GCM Decrypt Vault]
-    AES_DEC --> Vault[Vault plaintext]
-    
-    style C fill:#D6EAF8
-    style API fill:#D5F5E3
-    style DB fill:#FCF3CF
+flowchart TB
+ subgraph subGraph0["Client"]
+        C{"Key Derivation"}
+        U["User login"]
+        S["Server Salt"]
+        P["User Pepper"]
+        K["Derived Key 256-bit"]
+        ENC["AES-256-GCM Encrypt"]
+        V_PT["Vault Plaintext"]
+        V_CT["Ciphertext + Auth_Tag"]
+        N["Random Nonce"]
+        DEC["AES-256-GCM Decrypt"]
+        V_CT_IN["Ciphertext + Auth_Tag from Server"]
+        N_IN["Nonce from Server"]
+  end
+ subgraph subGraph1["Server"]
+        DB["Database: salt + nonce + ciphertext + auth_tag"]
+  end
+    U -- Auth Password --> C
+    P --> C
+    S --> C
+    C -- Argon2id --> K
+    V_PT --> ENC
+    K --> ENC & DEC
+    ENC --> V_CT & N
+    V_CT_IN --> DEC
+    N_IN --> DEC
+    DEC --> V_PT
+    V_CT -- Upload --> DB
+    N -- Upload --> DB
+    DB -- Download --> V_CT_IN & N_IN & S
+
+
+    style subGraph1 fill:#C8E6C9,stroke:#00C853
+    style subGraph0 fill:#BBDEFB,stroke:#2962FF
 ```
 
 ---
@@ -677,14 +692,10 @@ graph TB
 git clone https://github.com/DavidHerencia/password_manager_crypto.git
 cd password_manager_crypto
 
-# 2. Crear entorno virtual
-python -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-# .venv\Scripts\activate   # Windows
+# 2. Install UV
+# Buscar en internet segun tu OS
 
-# 3. Instalar dependencias
-pip install -e .
-# O usando uv:
+# 3. Crear entorno virtual
 uv sync
 ```
 
@@ -692,13 +703,11 @@ uv sync
 
 ```bash
 # Terminal 1: Iniciar el backend
-cd backend
-python main.py
+uv run backend/main.py
 # Servidor corriendo en http://localhost:8000
 
 # Terminal 2: Iniciar el frontend
-cd frontend
-python main.py
+uv run frontend/main.py
 ```
 
 ### 8.4 Uso de la API (ejemplos)
@@ -782,6 +791,7 @@ def login(request: Request, form_data: ...):
 1. **Inmediato**: Cambiar `random` por `secrets` en el generador de passwords
 2. **Inmediato**: Mover `SECRET_KEY` a variable de entorno
 3. **Corto plazo**: Implementar rate limiting en endpoints de autenticacion
+4. **Corto plazo**: Implementar HTTPS/TLS para toda la comunicación cliente–servidor
 4. **Mediano plazo**: Implementar limpieza segura de memoria sensible
 5. **Mediano plazo**: Anadir logs de auditoria
 
@@ -873,28 +883,3 @@ sequenceDiagram
 
 ---
 
-## **Anexo B: Checklist de Seguridad**
-
-### Pre-Produccion
-
-- [ ] Cambiar `SECRET_KEY` a variable de entorno
-- [ ] Cambiar `random` por `secrets` en generador
-- [ ] Implementar rate limiting
-- [ ] Configurar comunicacion cifrada (HTTPS/TLS)
-- [ ] Ejecutar analisis estatico con `bandit`
-- [ ] Revisar permisos de archivos de configuracion
-
-### Produccion
-
-- [ ] Migrar de SQLite a PostgreSQL
-- [ ] Configurar backups automatizados
-- [ ] Implementar logging y monitoreo
-- [ ] Configurar WAF (Web Application Firewall)
-- [ ] Establecer politica de rotacion de claves
-- [ ] Documentar procedimiento de recuperacion
-
----
-
-**Documento generado el:** 4 de Diciembre de 2025  
-**Version:** 1.1  
-**Autor:** Generado automaticamente a partir del analisis del codigo fuente
