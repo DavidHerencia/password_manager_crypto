@@ -7,11 +7,16 @@ from argon2 import PasswordHasher
 from starlette.status import HTTP_401_UNAUTHORIZED
 import uvicorn
 import os
+from dotenv import load_dotenv
 
 # --- Módulo de Base de Datos ---
 import database
 # --- Configuración ---
-SECRET_KEY = "criptoRules123"  # Usar una clave segura y aleatoria en producción
+load_dotenv()
+env_secret = os.environ.get("JWT_SECRET_KEY")
+if not env_secret:
+    raise RuntimeError("JWT_SECRET_KEY environment variable must be set")
+SECRET_KEY: str = env_secret
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 

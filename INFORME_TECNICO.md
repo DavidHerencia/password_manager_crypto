@@ -581,6 +581,26 @@ Anos hasta riesgo significativo: 281 mil millones de anos
 -------------------------------------------------------------
 Conclusion: Riesgo de reuso de nonce despreciable
 ```
+### 6.4 Análisis Estático Automatizado
+
+Para validar continuamente la superficie de ataque y asegurar la calidad del código, se ejecutaron herramientas de análisis estático (SAST) enfocadas en seguridad.
+
+**Bandit (v1.9.2)**
+- **Alcance:** Código Python del backend y scripts auxiliares.
+- **Comando:** `uv run bandit -r backend frontend -ll -o bandit-report.txt -f txt`
+- **Resultado:** Se detectó **1 hallazgo de severidad media (B104)** referente al *binding* de interfaces (`0.0.0.0` en `uvicorn.run`).
+  - *Justificación:* Este hallazgo se debe a que el app aun se encuentra en un entorno de desarrollo. Por lo que no se concidera una vulnerabilidad relvante en este contexto.
+
+**Semgrep (v1.121.0)**
+- **Alcance:** Escaneo general de buenas prácticas y seguridad (perfil `p/ci`).
+- **Comando:** `uv run semgrep --config p/ci --config p/python --output semgrep-report.txt`
+- **Resultado:** Reporte limpio (0 hallazgos).
+  - *Nota:* Se corrigió una alerta previa relacionada con el manejo de secretos *hardcodeados*, migrando la `SECRET_KEY` a variables de entorno antes del análisis final.
+
+La evidencia de estas ejecuciones se encuentra documentada en los archivos `bandit-report.txt` y `semgrep-report.txt`, asegurando la trazabilidad para futuras auditorías.
+
+#### Conclusión del Análisis
+El único hallazgo reportado por Bandit responde a una configuración necesaria para la arquitectura de despliegue y no representa una vulnerabilidad explotable en el código fuente, mientras que la limpieza en Semgrep confirma la correcta gestión de secretos y adherencia a estándares de seguridad en Python.
 
 ---
 
