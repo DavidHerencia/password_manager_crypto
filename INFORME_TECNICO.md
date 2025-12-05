@@ -275,8 +275,13 @@ flowchart TB
 ```python
 # backend/main.py
 from jose import JWTError, jwt
+from dotenv import load_dotenv
 
-SECRET_KEY = "criptoRules123"  # En produccion: clave segura aleatoria
+load_dotenv()
+env_secret = os.environ.get("JWT_SECRET_KEY")
+if not env_secret:
+    raise RuntimeError("JWT_SECRET_KEY environment variable must be set")
+SECRET_KEY: str = env_secret
 ALGORITHM = "HS256"
 
 def create_access_token(data: dict):
