@@ -794,9 +794,8 @@ def login(request: Request, form_data: ...):
 ### 9.3 Recomendaciones de Seguridad
 
 1. **Inmediato**: Cambiar `random` por `secrets` en el generador de passwords
-2. **Inmediato**: Mover `SECRET_KEY` a variable de entorno
-3. **Corto plazo**: Implementar rate limiting en endpoints de autenticacion
-4. **Corto plazo**: Implementar HTTPS/TLS para toda la comunicación cliente–servidor
+2. **Corto plazo**: Implementar rate limiting en endpoints de autenticacion
+3. **Corto plazo**: Implementar HTTPS/TLS para toda la comunicación cliente–servidor
 4. **Mediano plazo**: Implementar limpieza segura de memoria sensible
 5. **Mediano plazo**: Anadir logs de auditoria
 
@@ -821,7 +820,6 @@ def login(request: Request, form_data: ...):
 |------------|---------------|-----------------|
 | Comunicacion Cifrada (HTTPS/TLS) | Alta | Implementar HTTPS con certificado SSL para proteger el trafico en transito y prevenir ataques MITM |
 | Rate Limiting | Alta | Prevenir ataques de fuerza bruta al endpoint de login |
-| Secrets en Variables de Entorno | Alta | Remover hardcoding de SECRET_KEY |
 | Limpieza de Memoria | Media | Borrado seguro de claves en RAM |
 | 2FA/MFA | Media | Segundo factor de autenticacion |
 | Auditoria de Logs | Media | Registro de accesos y operaciones |
