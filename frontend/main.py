@@ -94,6 +94,59 @@ class PasswordGeneratorDialog(QDialog):
     def get_password(self):
         return self.password_display.text()
 
+
+class LocalSecretDialog(QDialog):
+    def __init__(self, pepper_value: str, storage_path: str, generated_now: bool, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Pepper local generado")
+        self.setMinimumWidth(460)
+
+        layout = QVBoxLayout(self)
+
+        if generated_now:
+            intro_text = (
+                "Se creó un secreto local (pepper) exclusivo de este dispositivo."
+                " Haz una copia fuera de la máquina: lo necesitarás para restaurar"
+                " tu bóveda en otro entorno junto con la contraseña maestra."
+            )
+        else:
+            intro_text = (
+                "Este es el pepper local actualmente en uso en este dispositivo."
+                " Cópialo y guárdalo en un lugar seguro junto con tu contraseña maestra."
+            )
+
+        intro = QLabel(intro_text)
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        self.pepper_field = QLineEdit(pepper_value)
+        self.pepper_field.setReadOnly(True)
+        self.pepper_field.setCursorPosition(0)
+        layout.addWidget(self.pepper_field)
+
+        copy_btn = QPushButton("Copiar pepper")
+        copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(pepper_value))
+        layout.addWidget(copy_btn)
+
+        path_label = QLabel(
+            f"También se almacenó en: {storage_path}\n"
+            "Protege ese archivo (permisos 600) y nunca compartas el pepper por canales inseguros."
+        )
+        path_label.setWordWrap(True)
+        layout.addWidget(path_label)
+
+        warning = QLabel(
+            "⚠️ Si pierdes el pepper o la contraseña maestra no podrás derivar la clave"
+            " en otro dispositivo y tu bóveda quedará inaccesible."
+        )
+        warning.setAccessibleName("muted")
+        warning.setWordWrap(True)
+        layout.addWidget(warning)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
 class AddEditDialog(QDialog):
     def __init__(self, entry_data=None, parent=None):
         super().__init__(parent)
@@ -344,6 +397,7 @@ class MainWindow(QMainWindow):
         
         # DEBUG: Auto-login con credenciales por defecto
         self.login_username.setText("admin")
+        self.login_auth_pass.setText("admin-access")
         self.login_master_pass.setText("1234")
         # Descomenta la siguiente línea para auto-login automático:
         # self.handle_unlock("admin", "password123")
@@ -370,17 +424,28 @@ class MainWindow(QMainWindow):
         # Create user
         self.setup_username = QLineEdit()
         self.setup_username.setPlaceholderText("nombre de usuario")
-        
+
+        self.setup_auth_pass = QLineEdit()
+        self.setup_auth_pass.setPlaceholderText("contraseña de acceso (autenticación)")
+        self.setup_auth_pass.setEchoMode(QLineEdit.Password)
+
+        self.setup_auth_confirm = QLineEdit()
+        self.setup_auth_confirm.setPlaceholderText("confirma tu contraseña de acceso")
+        self.setup_auth_confirm.setEchoMode(QLineEdit.Password)
+
         self.setup_master_pass = QLineEdit()
-        self.setup_master_pass.setPlaceholderText("contraseña maestra fuerte")
+        self.setup_master_pass.setPlaceholderText("contraseña maestra fuerte (cifrado)")
         self.setup_master_pass.setEchoMode(QLineEdit.Password)
-        
-        self.setup_confirm_pass = QLineEdit()
-        self.setup_confirm_pass.setPlaceholderText("confirma tu contraseña maestra")
-        self.setup_confirm_pass.setEchoMode(QLineEdit.Password)
+
+        self.setup_master_confirm = QLineEdit()
+        self.setup_master_confirm.setPlaceholderText("confirma tu contraseña maestra")
+        self.setup_master_confirm.setEchoMode(QLineEdit.Password)
         
         #WARNING
-        self.warning_label = QLabel("⚠️ Tu contraseña maestra no puede recuperarse. Si la olvidas, perderás acceso a la bóveda.")
+        self.warning_label = QLabel(
+            "⚠️ Necesitas UNA contraseña de acceso para autenticarte y OTRA contraseña maestra para cifrar."
+            " La maestra nunca viaja al servidor y no puede recuperarse si la olvidas."
+        )
         self.warning_label.setWordWrap(True)
         self.warning_label.setAccessibleName("muted")
 
@@ -400,10 +465,16 @@ class MainWindow(QMainWindow):
         container_layout.addSpacing(20)
         container_layout.addWidget(QLabel("Nombre de usuario:"))
         container_layout.addWidget(self.setup_username)
-        container_layout.addWidget(QLabel("Contraseña maestra:"))
+        container_layout.addSpacing(10)
+        container_layout.addWidget(QLabel("Contraseña de acceso (solo para autenticación):"))
+        container_layout.addWidget(self.setup_auth_pass)
+        container_layout.addWidget(QLabel("Confirmar contraseña de acceso:"))
+        container_layout.addWidget(self.setup_auth_confirm)
+        container_layout.addSpacing(10)
+        container_layout.addWidget(QLabel("Contraseña maestra (cifra/desbloquea tu bóveda):"))
         container_layout.addWidget(self.setup_master_pass)
-        container_layout.addWidget(QLabel("Confirmar contraseña:"))
-        container_layout.addWidget(self.setup_confirm_pass)
+        container_layout.addWidget(QLabel("Confirmar contraseña maestra:"))
+        container_layout.addWidget(self.setup_master_confirm)
         container_layout.addSpacing(10)
         container_layout.addWidget(create_button)
         container_layout.addSpacing(10)
@@ -426,6 +497,10 @@ class MainWindow(QMainWindow):
         self.login_username = QLineEdit()
         self.login_username.setPlaceholderText("nombre de usuario")
         
+        self.login_auth_pass = QLineEdit()
+        self.login_auth_pass.setPlaceholderText("contraseña de acceso (autenticación)")
+        self.login_auth_pass.setEchoMode(QLineEdit.Password)
+
         self.login_master_pass = QLineEdit()
         self.login_master_pass.setPlaceholderText("ingresa tu contraseña maestra")
         self.login_master_pass.setEchoMode(QLineEdit.Password)
@@ -445,6 +520,8 @@ class MainWindow(QMainWindow):
         container_layout.addSpacing(20)
         container_layout.addWidget(QLabel("Nombre de usuario:"))
         container_layout.addWidget(self.login_username)
+        container_layout.addWidget(QLabel("Contraseña de acceso:"))
+        container_layout.addWidget(self.login_auth_pass)
         container_layout.addWidget(QLabel("Contraseña maestra:"))
         container_layout.addWidget(self.login_master_pass)
         container_layout.addSpacing(10)
@@ -547,15 +624,21 @@ class MainWindow(QMainWindow):
     # Logica de handlers
     def handle_create_vault(self):
         username = self.setup_username.text()
+        auth_pass = self.setup_auth_pass.text()
+        auth_confirm = self.setup_auth_confirm.text()
         master_pass = self.setup_master_pass.text()
-        confirm_pass = self.setup_confirm_pass.text()
+        master_confirm = self.setup_master_confirm.text()
         if not username:
             QMessageBox.warning(self, "Error", "El nombre de usuario no puede estar vacío.")
             self.statusBar().showMessage("Nombre de usuario vacío.", 5000)
             return
-        if not master_pass or master_pass != confirm_pass:
-            QMessageBox.warning(self, "Error", "Las contraseñas no coinciden o están vacías.")
-            self.statusBar().showMessage("Las contraseñas no coinciden.", 5000)
+        if not auth_pass or auth_pass != auth_confirm:
+            QMessageBox.warning(self, "Error", "La contraseña de acceso no coincide o está vacía.")
+            self.statusBar().showMessage("La contraseña de acceso no coincide.", 5000)
+            return
+        if not master_pass or master_pass != master_confirm:
+            QMessageBox.warning(self, "Error", "La contraseña maestra no coincide o está vacía.")
+            self.statusBar().showMessage("La contraseña maestra no coincide.", 5000)
             return
         
         self.show_loading("Creando bóveda...")
@@ -564,6 +647,7 @@ class MainWindow(QMainWindow):
             self.hide_loading()
             if result is not None:
                 self._apply_vault_data(result)
+                self._maybe_show_local_secret_dialog(force=True)
                 self.statusBar().showMessage("Bóveda creada y sincronizada.", 5000)
             else:
                 QMessageBox.critical(self, "Error", "No se pudo crear la bóveda. Intenta nuevamente.")
@@ -574,20 +658,22 @@ class MainWindow(QMainWindow):
             on_success,
             lambda err: self._handle_backend_error(err, "crear la bóveda"),
             username,
+            auth_pass,
             master_pass
         )
 
-    def handle_unlock(self, username=None, password=None):
+    def handle_unlock(self, username=None, auth_password=None, master_password=None):
 
         username = username or self.login_username.text()
-        master_pass = password or self.login_master_pass.text()
-        if not username or not master_pass:
-            QMessageBox.warning(self, "Error", "El nombre de usuario y la contraseña maestra no pueden estar vacíos.")
+        auth_pass = auth_password or self.login_auth_pass.text()
+        master_pass = master_password or self.login_master_pass.text()
+        if not username or not auth_pass or not master_pass:
+            QMessageBox.warning(self, "Error", "Debes ingresar usuario, contraseña de acceso y contraseña maestra.")
             self.statusBar().showMessage("Credenciales incompletas.", 5000)
             return
 
-        # Este print es mucho más útil para depurar
-        print(f"Desbloqueando... Usuario: '{username}', Contraseña: '{master_pass}'")
+        # Este print es útil para depurar sin exponer secretos
+        print(f"Desbloqueando... Usuario: '{username}' con doble factor local")
         self.show_loading("Sincronizando bóveda...")
 
         def on_success(data):
@@ -604,6 +690,7 @@ class MainWindow(QMainWindow):
             on_success,
             lambda err: self._handle_backend_error(err, "desbloquear la bóveda"),
             username,
+            auth_pass,
             master_pass
         )
 
@@ -646,8 +733,19 @@ class MainWindow(QMainWindow):
         self.vault_data = data
         self.populate_table()
         self.stacked_widget.setCurrentWidget(self.vault_page)
+        self.login_auth_pass.clear()
         self.login_master_pass.clear()
         self.login_username.clear()
+
+    def _maybe_show_local_secret_dialog(self, force: bool = False):
+        secret_info = crypto_engine.get_local_secret_material(reset_flag=not force)
+        if not force and not secret_info.get("generated_now"):
+            return
+        pepper = str(secret_info.get("pepper", ""))
+        path = str(secret_info.get("config_path", ""))
+        generated = bool(secret_info.get("generated_now", False))
+        dialog = LocalSecretDialog(pepper, path, generated, self)
+        dialog.exec()
 
     def _handle_backend_error(self, message, context):
         self.hide_loading()
@@ -662,6 +760,9 @@ class MainWindow(QMainWindow):
         self.vault_data = {}
         self.clear_details()
         self.entries_list.clear()
+        self.login_username.clear()
+        self.login_auth_pass.clear()
+        self.login_master_pass.clear()
         self.stacked_widget.setCurrentWidget(self.login_page)
 
     def populate_table(self):
