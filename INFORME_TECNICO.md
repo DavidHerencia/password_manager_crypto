@@ -380,26 +380,28 @@ flowchart TB
 ```mermaid
 flowchart TB
  subgraph subGraph0["Client"]
-        C{"Key Derivation"}
-        U["User login"]
-        S["Server Salt"]
-        P["User Pepper"]
-        K["Derived Key 256-bit"]
-        ENC["AES-256-GCM Encrypt"]
-        V_PT["Vault Plaintext"]
-        V_CT["Ciphertext + Auth_Tag"]
-        N["Random Nonce"]
-        DEC["AES-256-GCM Decrypt"]
-        V_CT_IN["Ciphertext + Auth_Tag from Server"]
-        N_IN["Nonce from Server"]
+      Auth["Auth password<br/>(solo para JWT)"]
+      MP["Master password<br/>(solo cliente)"]
+      S["Server Salt"]
+      P["Client Pepper"]
+      CS["Client Salt"]
+      K["Derived Key 256-bit"]
+      ENC["AES-256-GCM Encrypt"]
+      V_PT["Vault Plaintext"]
+      V_CT["Ciphertext + Auth_Tag"]
+      N["Random Nonce"]
+      DEC["AES-256-GCM Decrypt"]
+      V_CT_IN["Ciphertext + Auth_Tag from Server"]
+      N_IN["Nonce from Server"]
   end
  subgraph subGraph1["Server"]
-        DB["Database: salt + nonce + ciphertext + auth_tag"]
+      DB["Database: salt + nonce + ciphertext + tag"]
   end
-    U -- Master Password --> C
-    P --> C
-    S --> C
-    C -- Argon2id --> K
+    Auth -. Solo login .-> DB
+    MP --> K
+    P --> K
+    CS --> K
+    S --> K
     V_PT --> ENC
     K --> ENC & DEC
     ENC --> V_CT & N
