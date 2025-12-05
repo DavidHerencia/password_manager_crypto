@@ -7,8 +7,8 @@
 | **Curso** | Criptografia |
 | **Semestre** | 2025-2 |
 | **Universidad** | UTEC |
-| **Repositorio** | [GitHub - DavidHerencia/password_manager_crypto](https://github.com/DavidHerencia/password_manager_crypto/tree/v2) |
-| **Rama Principal** | `v2` |
+| **Repositorio** | [GitHub - DavidHerencia/password_manager_crypto](https://github.com/DavidHerencia/password_manager_crypto) |
+| **Rama Principal** | `main` |
 
 ---
 
