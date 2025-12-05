@@ -308,8 +308,8 @@ sequenceDiagram
     participant S as Servidor
     participant DB as Base de Datos
     
-    C->>S: POST /api/users {username, password}
-    S->>S: hash = Argon2id(password)
+    C->>S: POST /api/users {username, auth_password}
+    S->>S: hash = Argon2id(auth_password)
     S->>S: salt_kdf = random(16 bytes)
     S->>DB: INSERT INTO users
     DB-->>S: OK
@@ -326,10 +326,10 @@ sequenceDiagram
     participant S as Servidor
     participant DB as Base de Datos
     
-    C->>S: POST /api/token {username, password}
+    C->>S: POST /api/token {username, auth_password}
     S->>DB: SELECT hash FROM users
     DB-->>S: hash
-    S->>S: Argon2id.verify(password, hash)
+    S->>S: Argon2id.verify(auth_password, hash)
     
     alt Verificacion Exitosa
         S-->>C: {access_token: JWT}
@@ -343,9 +343,8 @@ sequenceDiagram
     DB-->>S: {salt, nonce, ciphertext, tag}
     S-->>C: {salt, nonce, ciphertext, tag}
     
-    Note over C: Cliente descifra localmente<br/>con Argon2id + AES-GCM
+    Note over C: Con la contraseña maestra + pepper + salts deriva la clave AES y descifra localmente
 ```
-
 ### 4.3 Flujo de Guardado de Credencial
 
 ```mermaid
@@ -397,7 +396,7 @@ flowchart TB
  subgraph subGraph1["Server"]
         DB["Database: salt + nonce + ciphertext + auth_tag"]
   end
-    U -- Auth Password --> C
+    U -- Master Password --> C
     P --> C
     S --> C
     C -- Argon2id --> K

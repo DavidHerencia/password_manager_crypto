@@ -110,7 +110,7 @@ flowchart TB
  subgraph subGraph1["Server"]
         DB["Database: salt + nonce + ciphertext + auth_tag"]
   end
-    U -- Auth Password --> C
+    U -- Master Password --> C
     P --> C
     S --> C
     C -- Argon2id --> K
@@ -135,7 +135,7 @@ sequenceDiagram
     participant C as Client
     participant S as Server
 
-    C->>S: 1. POST /api/token (username, master_password)
+  C->>S: 1. POST /api/token (username, auth_password)
     activate S
     S-->>S: Verify credentials against hash in DB
     alt Successful Verification
@@ -146,14 +146,22 @@ sequenceDiagram
     end
     deactivate S
 
-    Note over C,S: Client stores the JWT in memory for the session
+  Note over C,S: Client stores the JWT (auth password nunca se reutiliza, master password nunca sale del cliente)
 
-    C->>S: 3. PUT /api/vault (new_encrypted_blob)<br/>Header: Authorization: Bearer JWT
+  C->>S: 3. GET /api/vault<br/>Authorization: Bearer JWT
+  activate S
+  S-->>S: Verify JWT signature and expiration
+  S-->>C: 4. {salt, nonce, ciphertext, tag}
+  deactivate S
+
+  Note over C: Con master password + pepper + salts deriva la clave AES-256 y descifra el vault localmente
+
+  C->>S: 5. PUT /api/vault (new_encrypted_blob)<br/>Header: Authorization: Bearer JWT
     activate S
     S-->>S: Verify JWT signature and expiration
     alt Valid JWT
         S-->>S: Update vault for user_id from token
-        S->>C: 4. OK
+    S->>C: 6. OK
     else Invalid JWT
         S->>C: 401 Unauthorized
     end
@@ -270,7 +278,7 @@ graph LR
 ```
 
 ## 6. Diseño de Interfaz (Borrador)
-- **Pantalla de Desbloqueo**: Campo único para la contraseña maestra.
+- **Pantalla de Desbloqueo**: Campos separados para contraseña de acceso (autenticación) y contraseña maestra (cifrado/desbloqueo).
 - **Dashboard Principal**: Lista de credenciales con búsqueda y filtrado. Botones para "Añadir Nueva" y "Sincronizar".
 - **Vista/Edición de Credencial**: Formulario modal con campos para nombre, usuario, contraseña (con opción de mostrar/ocultar), generador de contraseñas integrado y notas.
 - **Generador de Contraseñas**: Opciones configurables (longitud, tipos de caracteres) y botón de refresco.
