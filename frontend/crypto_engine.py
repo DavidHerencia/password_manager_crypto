@@ -135,7 +135,7 @@ def derive_key(password: str, salt: bytes, username: str, local_salt: bytes | No
     # Si tenemos salt local, verificamos que el servidor no lo haya alterado
     if local_salt is not None and local_salt != salt:
         raise RuntimeError(
-            f"🚨 TAMPERING DETECTED: Salt mismatch!\n"
+            f" TAMPERING DETECTED: Salt mismatch!\n"
             f"   Local salt:  {local_salt.hex()}\n"
             f"   Server salt: {salt.hex()}\n"
             f"   Database data may be compromised. Aborting decryption."
@@ -220,7 +220,7 @@ def decrypt_vault(blob, password, username: str | None = None):
         key = derive_key(password, salt, username, local_salt=local_salt)
         aesgcm = AESGCM(key)
         data = aesgcm.decrypt(nonce, ct, None)
-        print(f"✓ Vault decrypted successfully. Salt integrity verified.")
+        print(f"SUCCESS!! Vault decrypted successfully. Salt integrity verified.")
         return json.loads(data.decode())
     except RuntimeError as e:
         if "TAMPERING DETECTED" in str(e) or "SALT MISMATCH" in str(e):

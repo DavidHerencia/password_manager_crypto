@@ -688,7 +688,7 @@ class MainWindow(QMainWindow):
                 if error_code == "TAMPERING_DETECTED":
                     QMessageBox.critical(
                         self, 
-                        "🚨 ALERTA DE SEGURIDAD CRÍTICA 🚨", 
+                        "ALERTA DE SEGURIDAD CRÍTICA", 
                         f"La integridad de tu bóveda ha sido comprometida.\n\n"
                         f"Detalles: {error_message}\n\n"
                         f"Tu bóveda ha sido detectada con un 'Salt Mismatch'.\n"
@@ -749,7 +749,7 @@ class MainWindow(QMainWindow):
             # Desencriptación exitosa
             if data is not None:
                 self._apply_vault_data(data)
-                self.statusBar().showMessage("✓ Bóveda sincronizada correctamente.", 5000)
+                self.statusBar().showMessage("Bóveda sincronizada correctamente.", 5000)
             else:
                 QMessageBox.critical(self, "Error", "Usuario o contraseña(s) incorrecta.")
                 self.statusBar().showMessage("No se pudo desbloquear la bóveda.", 5000)

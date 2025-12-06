@@ -141,22 +141,9 @@ graph LR
 # Implementacion en crypto_engine.py
 from argon2.low_level import hash_secret_raw, Type
 
-def derive_key(password: str, salt: bytes, username: str, local_salt: bytes | None = None) -> bytes:
-    """Deriva la clave AES-256 combinando password, pepper local y salt sincronizado.
-
-    Si existe un salt local almacenado y no coincide con el salt recibido
-    desde el servidor, se considera un evento de tampering critico y se
-    aborta la operacion.
-    """
+def derive_key(password: str, salt: bytes, username: str) -> bytes:
     secrets_payload = _load_or_create_client_secrets(username)
     pepper_bytes = bytes.fromhex(secrets_payload["pepper"])
-
-    # Verificacion explicita de integridad del salt sincronizado
-    if local_salt is not None and local_salt != salt:
-        raise RuntimeError(
-            "TAMPERING DETECTED: Salt mismatch between local and server copy"
-        )
-
     secret = password.encode("utf-8") + pepper_bytes
     return hash_secret_raw(
         secret, salt,
@@ -196,19 +183,11 @@ flowchart TB
     style VS fill:#E8DAEF
 ```
 Tener en cuenta que el `vault_salt` se genera exclusivamente en el cliente 
-y luego se sincroniza en dos copias:
-
-- **Copia servidor**: se almacena en claro junto al blob en el servidor 
-    (dentro del JSON `{salt, nonce, ciphertext, tag}`).
-- **Copia local**: se persiste en el archivo de secretos locales del cliente
-    junto al `pepper`.
-
-En tiempo de descifrado, el cliente compara ambas copias (`salt` del blob y
-salt local). Si no coinciden, el motor criptográfico trata el evento como
-**tampering crítico** y aborta la operación antes siquiera de intentar
-descifrar. Solo si los dos salts coinciden se deriva la clave y se ejecuta
-AES-GCM. Esto proporciona una capa adicional de verificación de integridad
-además del auth tag de GCM.
+y luego se sincroniza: se almacena en claro junto al blob en el servidor 
+(dentro del JSON {salt, nonce, ciphertext, tag}) y también se guarda 
+localmente en el cliente. Esto garantiza que ambas partes deriven la misma 
+clave de cifrado. Si el servidor alterara el salt, el descifrado fallaría 
+inmediatamente gracias al auth tag de GCM.
 
 ### 3.2 Cifrado Autenticado (AEAD)
 
@@ -219,12 +198,6 @@ además del auth tag de GCM.
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 def encrypt_vault(vault_dict, password, salt: bytes | None = None, username: str | None = None):
-    """Serializa y cifra el vault usando un vault_salt sincronizado.
-
-    - Si no se proporciona `salt`, se genera uno nuevo de 32 bytes.
-    - El salt empleado se devuelve en el blob y se persiste también en el
-      archivo local de secretos para futuras verificaciones de integridad.
-    """
     if username is None:
         raise RuntimeError("Se requiere un nombre de usuario para cifrar la bóveda")
 
@@ -505,70 +478,31 @@ def _update_client_salt(username: str, salt_hex: str | None) -> None:
 #### 5.2.2 Verificacion de Integridad en Descifrado
 
 ```python
-# crypto_engine.py - extracto actualizado
+# crypto_engine.py - Lineas 170-210
 def decrypt_vault(blob, password, username: str | None = None):
     try:
-        salt_hex = blob["salt"]
-        nonce_hex = blob["nonce"]
-        ciphertext_hex = blob["ciphertext"]
-        tag_hex = blob["tag"]
-    except KeyError as exc:
-        print(f"Campos faltantes en el blob cifrado: {exc}")
-        return {"error": "MALFORMED_DATA", "message": "Vault data is corrupted"}
-
-    try:
-        salt = bytes.fromhex(salt_hex)
-        nonce = bytes.fromhex(nonce_hex)
-        ciphertext = bytes.fromhex(ciphertext_hex)
-        tag = bytes.fromhex(tag_hex)
-    except ValueError as exc:
-        print(f"Formato inválido en el blob cifrado (no es hexadecimal válido): {exc}")
-        return {"error": "MALFORMED_DATA", "message": "Vault data is corrupted"}
-
-    ct = ciphertext + tag
+        salt = bytes.fromhex(blob["salt"])
+        nonce = bytes.fromhex(blob["nonce"])
+        ciphertext = bytes.fromhex(blob["ciphertext"])
+        tag = bytes.fromhex(blob["tag"])
+    except (KeyError, ValueError) as exc:
+        print(f"Formato invalido en el blob cifrado: {exc}")
+        return None
 
     if username is None:
         raise RuntimeError("Se requiere un nombre de usuario para descifrar la bóveda")
 
-    # Cargar salt local para verificacion de tampering
-    secrets_payload = _load_or_create_client_secrets(username)
-    local_salt_hex = secrets_payload.get("salt")
-    local_salt = bytes.fromhex(local_salt_hex) if local_salt_hex else None
-
-    # 1) Verificacion explicita: comparar copia local vs copia servidor
-    if local_salt is not None and local_salt != salt:
-        return {
-            "error": "TAMPERING_DETECTED",
-            "message": "CRITICAL: Vault integrity compromised. Salt mismatch detected."
-        }
+    ct = ciphertext + tag
 
     try:
-        # 2) Derivar clave (incluye chequeo extra en derive_key)
-        key = derive_key(password, salt, username, local_salt=local_salt)
+        key = derive_key(password, salt, username)
         aesgcm = AESGCM(key)
         data = aesgcm.decrypt(nonce, ct, None)
         return json.loads(data.decode())
     except Exception as exc:
-        # 3) Clasificar errores (password incorrecta vs datos corruptos)
-        msg = str(exc)
-        if "authentication tag" in msg.lower():
-            return {
-                "error": "AUTH_FAILED",
-                "message": "Invalid password or vault data corrupted"
-            }
-        return {"error": "DECRYPT_ERROR", "message": msg}
+        print(f"Error descifrando vault con secretos locales: {exc}")
+        return None
 ```
-
-En esta nueva version, la integridad del vault se protege en **tres capas**:
-
-1. **Formato del blob**: si faltan campos o los hexadecimales no son validos,
-   se retorna `MALFORMED_DATA`.
-2. **Comparacion de salts**: si el `vault_salt` del servidor no coincide con el
-   salt local persistido, se retorna `TAMPERING_DETECTED` y se bloquea el
-   acceso.
-3. **Auth Tag de GCM**: si la clave derivada es incorrecta (por password
-   equivocada o datos modificados), GCM lanza una excepcion y se clasifica
-   como `AUTH_FAILED`.
 
 #### 5.2.3 Endpoint de Autenticacion Segura
 
