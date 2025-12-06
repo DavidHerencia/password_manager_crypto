@@ -141,9 +141,19 @@ graph LR
 # Implementacion en crypto_engine.py
 from argon2.low_level import hash_secret_raw, Type
 
-def derive_key(password: str, salt: bytes, username: str) -> bytes:
+def derive_key(password: str, salt: bytes, username: str, local_salt: bytes | None = None) -> bytes:
     secrets_payload = _load_or_create_client_secrets(username)
     pepper_bytes = bytes.fromhex(secrets_payload["pepper"])
+
+    # Si tenemos salt local, verificamos que el servidor no lo haya alterado
+    if local_salt is not None and local_salt != salt:
+        raise RuntimeError(
+            f" TAMPERING DETECTED: Salt mismatch!\n"
+            f"   Local salt:  {local_salt.hex()}\n"
+            f"   Server salt: {salt.hex()}\n"
+            f"   Database data may be compromised. Aborting decryption."
+        )
+    
     secret = password.encode("utf-8") + pepper_bytes
     return hash_secret_raw(
         secret, salt,
