@@ -14,9 +14,9 @@ import json
 import hashlib
 from pathlib import Path
 
-# Carpeta local para almacenar secretos del cliente (pepper y salt locales)
+# Carpeta local para almacenar secretos del cliente (pepper y salt)
 CONFIG_DIR = Path.home() / ".password_manager_crypto"
-LEGACY_CLIENT_SECRETS_FILE = CONFIG_DIR / "client_secrets.json"
+VAULT_SALT_LENGTH = 32  # bytes generados por cifrado del vault
 
 BACKEND_URL = "http://localhost:8000"  # Cambia si tu backend está en otro host/puerto
 ph = PasswordHasher()
@@ -31,7 +31,7 @@ vault_data = {}
 master_key = None
 username_cache = None
 
-_client_secrets_cache: dict[str, dict[str, str]] = {}
+_client_secrets_cache: dict[str, dict[str, str | None]] = {}
 _client_secrets_recently_created: dict[str, bool] = {}
 
 
@@ -47,8 +47,17 @@ def _secrets_file_for(username: str) -> Path:
     return CONFIG_DIR / f"{digest}.json"
 
 
-def _load_or_create_client_secrets(username: str) -> dict[str, str]:
-    """Obtiene (o genera) el pepper y salt locales para un usuario concreto."""
+def _write_client_secrets(normalized: str, payload: dict[str, str | None]) -> None:
+    secrets_file = _secrets_file_for(normalized)
+    with secrets_file.open("w", encoding="utf-8") as fh:
+        json.dump(payload, fh)
+    if os.name != "nt":
+        os.chmod(secrets_file, 0o600)
+    _client_secrets_cache[normalized] = payload
+
+
+def _load_or_create_client_secrets(username: str) -> dict[str, str | None]:
+    """Obtiene (o genera) el pepper y el salt local para un usuario concreto."""
     global _client_secrets_cache, _client_secrets_recently_created
 
     normalized = _normalize_username(username)
@@ -72,48 +81,28 @@ def _load_or_create_client_secrets(username: str) -> dict[str, str]:
         except Exception as exc:
             raise RuntimeError("No se pudo leer el archivo de secretos del cliente") from exc
 
-        if not isinstance(data, dict) or "pepper" not in data or "client_salt" not in data:
+        if not isinstance(data, dict) or "pepper" not in data:
             raise RuntimeError("El archivo de secretos del cliente no tiene el formato esperado")
 
-        _client_secrets_cache[normalized] = data
+        # Migración de formatos anteriores: client_salt / vault_salt -> salt único
+        salt_hex = data.get("salt") or data.get("vault_salt") or data.get("client_salt")
+        normalized_payload = {
+            "pepper": data["pepper"],
+            "salt": salt_hex
+        }
+
+        _write_client_secrets(normalized, normalized_payload)
+        _client_secrets_cache[normalized] = normalized_payload
         _client_secrets_recently_created[normalized] = False
-        return data
+        return normalized_payload
 
-    # Compatibilidad: si existe un archivo legacy compartido, migrarlo a este usuario
-    if LEGACY_CLIENT_SECRETS_FILE.exists():
-        try:
-            with LEGACY_CLIENT_SECRETS_FILE.open("r", encoding="utf-8") as fh:
-                legacy_data = json.load(fh)
-        except Exception as exc:
-            raise RuntimeError("No se pudo leer el archivo de secretos legacy") from exc
-
-        if isinstance(legacy_data, dict) and "pepper" in legacy_data and "client_salt" in legacy_data:
-            with secrets_file.open("w", encoding="utf-8") as fh:
-                json.dump(legacy_data, fh)
-            if os.name != "nt":
-                os.chmod(secrets_file, 0o600)
-            try:
-                LEGACY_CLIENT_SECRETS_FILE.unlink()
-            except FileNotFoundError:
-                pass
-            except Exception as exc:
-                print(f"No se pudo eliminar el archivo legacy de secretos: {exc}")
-            _client_secrets_cache[normalized] = legacy_data
-            _client_secrets_recently_created[normalized] = False
-            return legacy_data
-
+    #en caso que no exista el archivo, crear nuevos secretos
     secrets_payload = {
         "pepper": secrets.token_hex(32),
-        "client_salt": secrets.token_hex(32)
+        "salt": None
     }
 
-    with secrets_file.open("w", encoding="utf-8") as fh:
-        json.dump(secrets_payload, fh)
-
-    if os.name != "nt":
-        os.chmod(secrets_file, 0o600)
-
-    _client_secrets_cache[normalized] = secrets_payload
+    _write_client_secrets(normalized, secrets_payload)
     _client_secrets_recently_created[normalized] = True
     return secrets_payload
 
@@ -128,7 +117,7 @@ def get_local_secret_material(username: str, reset_flag: bool = True) -> dict[st
         _client_secrets_recently_created[normalized] = False
     return {
         "pepper": secrets_payload["pepper"],
-        "client_salt": secrets_payload["client_salt"],
+        "salt": secrets_payload.get("salt"),
         "generated_now": generated_now,
         "config_path": str(_secrets_file_for(normalized))
     }
@@ -138,37 +127,54 @@ def set_token(jwt):
     token = jwt
     session.headers.update({"Authorization": f"Bearer {jwt}"})
 
-def derive_key(password: str, salt: bytes, username: str) -> bytes:
-    # Usa Argon2id para derivar la clave AES-256, combinando password y secretos locales
+def derive_key(password: str, salt: bytes, username: str, local_salt: bytes | None = None) -> bytes:
     from argon2.low_level import hash_secret_raw, Type
     secrets_payload = _load_or_create_client_secrets(username)
     pepper_bytes = bytes.fromhex(secrets_payload["pepper"])
-    client_salt_bytes = bytes.fromhex(secrets_payload["client_salt"])
-    secret = password.encode("utf-8") + pepper_bytes + client_salt_bytes
+    
+    # Si tenemos salt local, verificamos que el servidor no lo haya alterado
+    if local_salt is not None and local_salt != salt:
+        raise RuntimeError(
+            f"🚨 TAMPERING DETECTED: Salt mismatch!\n"
+            f"   Local salt:  {local_salt.hex()}\n"
+            f"   Server salt: {salt.hex()}\n"
+            f"   Database data may be compromised. Aborting decryption."
+        )
+    
+    secret = password.encode("utf-8") + pepper_bytes
     return hash_secret_raw(
         secret, salt,
         time_cost=3, memory_cost=65536, parallelism=2, hash_len=32, type=Type.ID
     )
 
-def encrypt_vault(vault_dict, password, salt=None, username: str | None = None):
-    # Serializa y cifra el vault dict
-    if salt is None:
-        # Si no hay salt, generamos uno nuevo (solo para vault nuevo)
-        salt = os.urandom(16)
+def encrypt_vault(vault_dict, password, salt: bytes | None = None, username: str | None = None):
+    """Serializa y cifra el vault dict con un salt nuevo si no se provee."""
     if username is None:
         raise RuntimeError("Se requiere un nombre de usuario para cifrar la bóveda")
-    key = derive_key(password, salt, username)
+    
+    salt_bytes = salt if salt is not None else os.urandom(VAULT_SALT_LENGTH)
+    key = derive_key(password, salt_bytes, username)
     aesgcm = AESGCM(key)
     nonce = os.urandom(12)
+    
     data = json.dumps(vault_dict).encode()
     ct = aesgcm.encrypt(nonce, data, None)
+    
     ciphertext, tag = ct[:-16], ct[-16:]
     return {
-        "salt": salt.hex(),
+        "salt": salt_bytes.hex(),
         "nonce": nonce.hex(),
         "ciphertext": ciphertext.hex(),
         "tag": tag.hex()
     }
+def _update_client_salt(username: str, salt_hex: str | None) -> None:
+    normalized = _normalize_username(username)
+    secrets_payload = dict(_load_or_create_client_secrets(normalized))
+    if secrets_payload.get("salt") == salt_hex:
+        return
+    secrets_payload["salt"] = salt_hex
+    _write_client_secrets(normalized, secrets_payload)
+
 
 def decrypt_vault(blob, password, username: str | None = None):
     try:
@@ -178,7 +184,7 @@ def decrypt_vault(blob, password, username: str | None = None):
         tag_hex = blob["tag"]
     except KeyError as exc:
         print(f"Campos faltantes en el blob cifrado: {exc}")
-        return {}
+        return {"error": "MALFORMED_DATA", "message": "Vault data is corrupted"}
 
     try:
         salt = bytes.fromhex(salt_hex)
@@ -186,44 +192,55 @@ def decrypt_vault(blob, password, username: str | None = None):
         ciphertext = bytes.fromhex(ciphertext_hex)
         tag = bytes.fromhex(tag_hex)
     except ValueError as exc:
-        print(f"Formato inválido en el blob cifrado: {exc}")
-        return {}
+        print(f"Formato inválido en el blob cifrado (no es hexadecimal válido): {exc}")
+        print(f"  salt_hex: {salt_hex}")
+        print(f"  nonce_hex: {nonce_hex}")
+        return {"error": "MALFORMED_DATA", "message": "Vault data is corrupted"}
 
     ct = ciphertext + tag
 
     try:
         if username is None:
             raise RuntimeError("Se requiere un nombre de usuario para descifrar la bóveda")
-        key = derive_key(password, salt, username)
+        
+        # Obtener el salt local almacenado para verificar tampering ANTES de descifrar
+        secrets_payload = _load_or_create_client_secrets(username)
+        local_salt_hex = secrets_payload.get("salt")
+        local_salt = bytes.fromhex(local_salt_hex) if local_salt_hex else None
+        
+        # Verificación explícita de tampering del salt
+        if local_salt is not None and local_salt != salt:
+            return {
+                "error": "TAMPERING_DETECTED",
+                "message": "CRITICAL: Vault integrity compromised. Salt mismatch detected.",
+                "details": f"Local: {local_salt.hex()[:16]}... vs Server: {salt.hex()[:16]}..."
+            }
+        
+        # Derivar clave pasando ambos salts para detección de tampering
+        key = derive_key(password, salt, username, local_salt=local_salt)
         aesgcm = AESGCM(key)
         data = aesgcm.decrypt(nonce, ct, None)
+        print(f"✓ Vault decrypted successfully. Salt integrity verified.")
         return json.loads(data.decode())
+    except RuntimeError as e:
+        if "TAMPERING DETECTED" in str(e) or "SALT MISMATCH" in str(e):
+            print(f"{e}")
+            return {
+                "error": "TAMPERING_DETECTED",
+                "message": "CRITICAL: Vault integrity compromised. Salt mismatch detected."
+            }
+        raise
     except Exception as e:
+        error_str = str(e)
+        # Detectar si fue error de autenticación GCM (contraseña incorrecta o datos alterados)
+        if "authentication tag did not verify" in error_str.lower() or "decrypt" in error_str.lower():
+            return {
+                "error": "AUTH_FAILED",
+                "message": "Invalid password or vault data corrupted"
+            }
         print(f"Error descifrando vault con secretos locales: {e}")
-
-    # Intento de compatibilidad con versiones anteriores que usaban un pepper global fijo
-    try:
-        from argon2.low_level import hash_secret_raw, Type
-
-        legacy_secret = (password + "pepper_super_secreto").encode("utf-8")
-        legacy_key = hash_secret_raw(
-            legacy_secret,
-            salt,
-            time_cost=3,
-            memory_cost=65536,
-            parallelism=2,
-            hash_len=32,
-            type=Type.ID,
-        )
-        aesgcm = AESGCM(legacy_key)
-        ct = ciphertext + tag
-        data = aesgcm.decrypt(nonce, ct, None)
-        print("Vault descifrado con pepper legado; se rotará al guardar cambios.")
-        return json.loads(data.decode())
-    except Exception as legacy_error:
-        print(f"Error descifrando vault con pepper legado: {legacy_error}")
-        return {}
-
+        return {"error": "DECRYPT_ERROR", "message": str(e)}
+    
 def create_vault(username, auth_password, master_password):
     global vault_data, master_key, username_cache, last_salt
     try:
@@ -248,11 +265,14 @@ def create_vault(username, auth_password, master_password):
     master_key = master_password
     username_cache = username
     # Subir vault vacío cifrado (salt nuevo)
-    blob = encrypt_vault(vault_data, master_password, salt=last_salt, username=username)
+    blob = encrypt_vault(vault_data, master_password, username=username)
+    new_salt = bytes.fromhex(blob["salt"])
     try:
         unlock_vault(username, auth_password, master_password)  # login y set_token
         resp = session.put(f"{BACKEND_URL}/api/vault", json=blob)
         resp.raise_for_status()
+        last_salt = new_salt
+        _update_client_salt(username, blob["salt"])
     except Exception as e:
         print(f"Error subiendo vault inicial: {e}")
         return None
@@ -282,25 +302,55 @@ def unlock_vault(username, auth_password, master_password):
             return vault_data
         resp.raise_for_status()
         blob = resp.json()
+        
+        # Validar que el blob tenga formato correcto antes de descifrar
+        if not isinstance(blob, dict) or not all(k in blob for k in ["salt", "nonce", "ciphertext", "tag"]):
+            print(f"Error: Blob del servidor tiene formato inválido: {blob}")
+            return {"error": "MALFORMED_DATA", "message": "Vault data is corrupted on server"}
+        
         # Usar el salt recibido para descifrar y para futuras escrituras
-        vault_data = decrypt_vault(blob, master_password, username=username)
+        decrypted = decrypt_vault(blob, master_password, username=username)
+        
+        # Manejar diferentes tipos de errores
+        if isinstance(decrypted, dict) and "error" in decrypted:
+            # Es un error de desencriptación, lo propagamos
+            print(f"Error crítico: {decrypted['error']} - {decrypted['message']}")
+            return decrypted
+        
+        if decrypted is None:
+            print("Error crítico: login exitoso pero la desencriptación falló.")
+            return {"error": "UNKNOWN_ERROR", "message": "Decryption failed for unknown reason"}
+        
+        vault_data = decrypted
         master_key = master_password
         username_cache = username
-        # Guardar el salt para futuras escrituras
-        last_salt = bytes.fromhex(blob["salt"])
+        
+        # Guardar el salt para futuras escrituras (con validación)
+        try:
+            last_salt = bytes.fromhex(blob["salt"])
+            _update_client_salt(username, blob.get("salt"))
+        except ValueError as e:
+            print(f"Error: Salt del servidor no es válido (hexadecimal): {e}")
+            print(f"  Valor recibido: {blob.get('salt')}")
+            return {"error": "MALFORMED_DATA", "message": "Server salt is not valid hexadecimal"}
+        
         return vault_data
     except Exception as e:
         print(f"Error obteniendo vault: {e}")
-        return None
+        import traceback
+        traceback.print_exc()
+        return {"error": "NETWORK_ERROR", "message": str(e)}
 
 def _persist_vault():
+    global last_salt
     if not master_key:
         raise RuntimeError("No hay sesión activa")
-    if last_salt is None:
-        raise RuntimeError("No hay salt disponible para el vault")
-    blob = encrypt_vault(vault_data, master_key, salt=last_salt, username=username_cache)
+    blob = encrypt_vault(vault_data, master_key, username=username_cache)
+    new_salt = bytes.fromhex(blob["salt"])
     resp = session.put(f"{BACKEND_URL}/api/vault", json=blob)
     resp.raise_for_status()
+    last_salt = new_salt
+    _update_client_salt(username_cache, blob["salt"])
     return dict(vault_data)
 
 def save_entry(entry_data, entry_id=None):

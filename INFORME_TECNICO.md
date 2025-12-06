@@ -61,12 +61,12 @@ El sistema esta disenado para proteger contra:
 ### 2.1 Diagrama de Arquitectura General
 
 ```mermaid
-graph TB
+graph LR
     subgraph Cliente["Cliente Desktop (Python/PySide6)"]
         UI["UI (PySide6)"]
         CE["Crypto Engine<br/>- Argon2id KDF<br/>- AES-256-GCM<br/>- Password Gen"]
         HTTP["HTTP Client<br/>- JWT Storage<br/>- REST API calls"]
-        LS["Local Secrets<br/>~/.password_manager_crypto/<br/>- pepper (256 bits)<br/>- client_salt (256 bits)"]
+        LS["Local Secrets<br/>~/.password_manager_crypto/<br/>- pepper (256 bits)<br/>- salt sincronizado (256 bits)"]
         
         UI <--> CE
         CE <--> HTTP
@@ -141,21 +141,26 @@ graph TB
 # Implementacion en crypto_engine.py
 from argon2.low_level import hash_secret_raw, Type
 
-def derive_key(password: str, salt: bytes) -> bytes:
-    secrets_payload = _load_or_create_client_secrets()
+def derive_key(password: str, salt: bytes, username: str, local_salt: bytes | None = None) -> bytes:
+    """Deriva la clave AES-256 combinando password, pepper local y salt sincronizado.
+
+    Si existe un salt local almacenado y no coincide con el salt recibido
+    desde el servidor, se considera un evento de tampering critico y se
+    aborta la operacion.
+    """
+    secrets_payload = _load_or_create_client_secrets(username)
     pepper_bytes = bytes.fromhex(secrets_payload["pepper"])
-    client_salt_bytes = bytes.fromhex(secrets_payload["client_salt"])
-    
-    # Combinacion segura de secretos
-    secret = password.encode("utf-8") + pepper_bytes + client_salt_bytes
-    
+
+    # Verificacion explicita de integridad del salt sincronizado
+    if local_salt is not None and local_salt != salt:
+        raise RuntimeError(
+            "TAMPERING DETECTED: Salt mismatch between local and server copy"
+        )
+
+    secret = password.encode("utf-8") + pepper_bytes
     return hash_secret_raw(
         secret, salt,
-        time_cost=3,        # Iteraciones
-        memory_cost=65536,  # 64 MB de memoria
-        parallelism=2,      # Hilos paralelos
-        hash_len=32,        # 256 bits de salida
-        type=Type.ID        # Argon2id (hibrido)
+        time_cost=3, memory_cost=65536, parallelism=2, hash_len=32, type=Type.ID
     )
 ```
 
@@ -174,23 +179,36 @@ def derive_key(password: str, salt: bytes) -> bytes:
 ```mermaid
 flowchart TB
     MP["Master Password"]
-    SS["Server Salt<br/>(16 bytes)"]
+    VS["Vault Salt<br/>(32 bytes, rotativo)"]
     CP["Client Pepper<br/>(32 bytes)"]
-    CS["Client Salt<br/>(32 bytes)"]
-    
+
     MP --> CONCAT
-    SS --> CONCAT
     CP --> CONCAT
-    CS --> CONCAT
-    
+    VS --> ARGON
+
     CONCAT["Concatenacion de Secretos"]
     CONCAT --> ARGON["Argon2id<br/>t=3, m=64MB, p=2"]
     ARGON --> DK["Derived Key<br/>(256 bits)"]
-    
+
     style MP fill:#FADBD8
     style DK fill:#D5F5E3
     style ARGON fill:#D6EAF8
+    style VS fill:#E8DAEF
 ```
+Tener en cuenta que el `vault_salt` se genera exclusivamente en el cliente 
+y luego se sincroniza en dos copias:
+
+- **Copia servidor**: se almacena en claro junto al blob en el servidor 
+    (dentro del JSON `{salt, nonce, ciphertext, tag}`).
+- **Copia local**: se persiste en el archivo de secretos locales del cliente
+    junto al `pepper`.
+
+En tiempo de descifrado, el cliente compara ambas copias (`salt` del blob y
+salt local). Si no coinciden, el motor criptográfico trata el evento como
+**tampering crítico** y aborta la operación antes siquiera de intentar
+descifrar. Solo si los dos salts coinciden se deriva la clave y se ejecuta
+AES-GCM. Esto proporciona una capa adicional de verificación de integridad
+además del auth tag de GCM.
 
 ### 3.2 Cifrado Autenticado (AEAD)
 
@@ -200,21 +218,27 @@ flowchart TB
 # Implementacion en crypto_engine.py
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-def encrypt_vault(vault_dict, password, salt=None):
-    if salt is None:
-        salt = os.urandom(16)
-    
-    key = derive_key(password, salt)
+def encrypt_vault(vault_dict, password, salt: bytes | None = None, username: str | None = None):
+    """Serializa y cifra el vault usando un vault_salt sincronizado.
+
+    - Si no se proporciona `salt`, se genera uno nuevo de 32 bytes.
+    - El salt empleado se devuelve en el blob y se persiste también en el
+      archivo local de secretos para futuras verificaciones de integridad.
+    """
+    if username is None:
+        raise RuntimeError("Se requiere un nombre de usuario para cifrar la bóveda")
+
+    salt_bytes = salt if salt is not None else os.urandom(VAULT_SALT_LENGTH)
+    key = derive_key(password, salt_bytes, username)
     aesgcm = AESGCM(key)
-    nonce = os.urandom(12)  # 96 bits, unico por cifrado
-    
+    nonce = os.urandom(12)
+
     data = json.dumps(vault_dict).encode()
     ct = aesgcm.encrypt(nonce, data, None)
-    
+
     ciphertext, tag = ct[:-16], ct[-16:]
-    
     return {
-        "salt": salt.hex(),
+        "salt": salt_bytes.hex(),
         "nonce": nonce.hex(),
         "ciphertext": ciphertext.hex(),
         "tag": tag.hex()
@@ -315,7 +339,7 @@ sequenceDiagram
     DB-->>S: OK
     S-->>C: {msg: "success", salt_kdf}
     
-    Note over C: Cliente genera pepper y<br/>client_salt localmente
+    Note over C: Cliente genera pepper y<br/>vault_salt localmente
 ```
 
 ### 4.2 Flujo de Login y Obtencion de Vault
@@ -343,17 +367,17 @@ sequenceDiagram
     DB-->>S: {salt, nonce, ciphertext, tag}
     S-->>C: {salt, nonce, ciphertext, tag}
     
-    Note over C: Con la contraseña maestra + pepper + salts deriva la clave AES y descifra localmente
+    Note over C: Con la contraseña maestra + pepper + vault_salt deriva la clave AES y descifra localmente
 ```
 ### 4.3 Flujo de Guardado de Credencial
 
 ```mermaid
-flowchart TB
+flowchart LR
     subgraph Cliente["CLIENTE"]
         U["Usuario anade credencial via UI"]
         VD["vault_data[id] = {<br/>service, username, password}"]
         ENC["encrypt_vault()"]
-        ENCDET["key = Argon2id(password + pepper + client_salt, salt)<br/>nonce = random(12 bytes)<br/>ciphertext + tag = AES-GCM(key, nonce, vault_json)"]
+        ENCDET["key = Argon2id(password + pepper, salt)<br/>nonce = random(12 bytes)<br/>ciphertext + tag = AES-GCM(key, nonce, vault_json)"]
         PUT["PUT /api/vault<br/>{salt, nonce, ciphertext, tag}"]
         
         U --> VD
@@ -380,28 +404,26 @@ flowchart TB
 ```mermaid
 flowchart TB
  subgraph subGraph0["Client"]
-      Auth["Auth password<br/>(solo para JWT)"]
-      MP["Master password<br/>(solo cliente)"]
-      S["Server Salt"]
-      P["Client Pepper"]
-      CS["Client Salt"]
-      K["Derived Key 256-bit"]
-      ENC["AES-256-GCM Encrypt"]
-      V_PT["Vault Plaintext"]
-      V_CT["Ciphertext + Auth_Tag"]
-      N["Random Nonce"]
-      DEC["AES-256-GCM Decrypt"]
-      V_CT_IN["Ciphertext + Auth_Tag from Server"]
-      N_IN["Nonce from Server"]
-  end
+            Auth["Auth password<br/>(solo para JWT)"]
+            MP["Master password<br/>(solo cliente)"]
+            P["Client Pepper"]
+            VS["Vault Salt"]
+            K["Derived Key 256-bit"]
+            ENC["AES-256-GCM Encrypt"]
+            V_PT["Vault Plaintext"]
+            V_CT["Ciphertext + Auth_Tag"]
+            N["Random Nonce"]
+            DEC["AES-256-GCM Decrypt"]
+            V_CT_IN["Ciphertext + Auth_Tag from Server"]
+            N_IN["Nonce from Server"]
+    end
  subgraph subGraph1["Server"]
       DB["Database: salt + nonce + ciphertext + tag"]
   end
     Auth -. Solo login .-> DB
     MP --> K
     P --> K
-    CS --> K
-    S --> K
+    VS --> K
     V_PT --> ENC
     K --> ENC & DEC
     ENC --> V_CT & N
@@ -410,7 +432,7 @@ flowchart TB
     DEC --> V_PT
     V_CT -- Upload --> DB
     N -- Upload --> DB
-    DB -- Download --> V_CT_IN & N_IN & S
+    DB -- Download --> V_CT_IN & N_IN & VS
 
 
     style subGraph1 fill:#C8E6C9,stroke:#00C853
@@ -443,62 +465,110 @@ password_manager_crypto/
 
 ### 5.2 Codigo Critico Analizado
 
-#### 5.2.1 Generacion de Secretos Locales del Cliente
+#### 5.2.1 Generacion y Sincronizacion de Secretos Locales
 
 ```python
-# crypto_engine.py - Lineas 35-70
-def _load_or_create_client_secrets() -> dict[str, str]:
-    """
-    Genera o carga pepper y salt locales del cliente.
-    
-    Seguridad:
-    - Permisos 0o700 en directorio (solo usuario)
-    - Permisos 0o600 en archivo (solo lectura/escritura usuario)
-    - 256 bits de entropia por secreto
-    """
+# crypto_engine.py - extracto actual
+def _load_or_create_client_secrets(username: str) -> dict[str, str | None]:
+    normalized = _normalize_username(username)
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     if os.name != "nt":
-        CONFIG_DIR.chmod(0o700)  # rwx------
-    
-    if not CLIENT_SECRETS_FILE.exists():
-        secrets_payload = {
-            "pepper": secrets.token_hex(32),      # 256 bits
-            "client_salt": secrets.token_hex(32)  # 256 bits
-        }
-        with CLIENT_SECRETS_FILE.open("w") as fh:
-            json.dump(secrets_payload, fh)
-        if os.name != "nt":
-            os.chmod(CLIENT_SECRETS_FILE, 0o600)  # rw-------
-    
-    return json.load(CLIENT_SECRETS_FILE.open("r"))
+        CONFIG_DIR.chmod(0o700)
+
+    secrets_file = _secrets_file_for(normalized)
+    if secrets_file.exists():
+        data = json.load(secrets_file.open("r", encoding="utf-8"))
+        if "pepper" not in data:
+            raise RuntimeError("Formato invalido")
+        salt_hex = data.get("salt") or data.get("vault_salt") or data.get("client_salt")
+        payload = {"pepper": data["pepper"], "salt": salt_hex}
+        _write_client_secrets(normalized, payload)  # Normaliza formato legado
+        return payload
+
+    payload = {"pepper": secrets.token_hex(32), "salt": None}
+    _write_client_secrets(normalized, payload)
+    return payload
+
+def _update_client_salt(username: str, salt_hex: str | None) -> None:
+    payload = dict(_load_or_create_client_secrets(username))
+    if payload.get("salt") != salt_hex:
+        payload["salt"] = salt_hex
+        _write_client_secrets(_normalize_username(username), payload)
 ```
+
+**Claves de seguridad:**
+
+- El archivo local almacena un `pepper` (32 bytes) y el ultimo `vault_salt` sincronizado.
+- El salt se genera en el cliente cada vez que se cifra la bóveda y se replica tanto en el backend como en el archivo local.
+- Existe una migracion automatica que convierte formatos previos (`client_salt`/`vault_salt`) al nuevo esquema sin perder compatibilidad.
 
 #### 5.2.2 Verificacion de Integridad en Descifrado
 
 ```python
-# crypto_engine.py - Lineas 100-130
-def decrypt_vault(blob, password):
+# crypto_engine.py - extracto actualizado
+def decrypt_vault(blob, password, username: str | None = None):
     try:
-        salt = bytes.fromhex(blob["salt"])
-        nonce = bytes.fromhex(blob["nonce"])
-        ciphertext = bytes.fromhex(blob["ciphertext"])
-        tag = bytes.fromhex(blob["tag"])
-    except (KeyError, ValueError) as exc:
-        print(f"Error en formato del blob: {exc}")
-        return {}  # Fail-safe
-    
-    ct = ciphertext + tag  # GCM espera ciphertext||tag
-    
+        salt_hex = blob["salt"]
+        nonce_hex = blob["nonce"]
+        ciphertext_hex = blob["ciphertext"]
+        tag_hex = blob["tag"]
+    except KeyError as exc:
+        print(f"Campos faltantes en el blob cifrado: {exc}")
+        return {"error": "MALFORMED_DATA", "message": "Vault data is corrupted"}
+
     try:
-        key = derive_key(password, salt)
+        salt = bytes.fromhex(salt_hex)
+        nonce = bytes.fromhex(nonce_hex)
+        ciphertext = bytes.fromhex(ciphertext_hex)
+        tag = bytes.fromhex(tag_hex)
+    except ValueError as exc:
+        print(f"Formato inválido en el blob cifrado (no es hexadecimal válido): {exc}")
+        return {"error": "MALFORMED_DATA", "message": "Vault data is corrupted"}
+
+    ct = ciphertext + tag
+
+    if username is None:
+        raise RuntimeError("Se requiere un nombre de usuario para descifrar la bóveda")
+
+    # Cargar salt local para verificacion de tampering
+    secrets_payload = _load_or_create_client_secrets(username)
+    local_salt_hex = secrets_payload.get("salt")
+    local_salt = bytes.fromhex(local_salt_hex) if local_salt_hex else None
+
+    # 1) Verificacion explicita: comparar copia local vs copia servidor
+    if local_salt is not None and local_salt != salt:
+        return {
+            "error": "TAMPERING_DETECTED",
+            "message": "CRITICAL: Vault integrity compromised. Salt mismatch detected."
+        }
+
+    try:
+        # 2) Derivar clave (incluye chequeo extra en derive_key)
+        key = derive_key(password, salt, username, local_salt=local_salt)
         aesgcm = AESGCM(key)
         data = aesgcm.decrypt(nonce, ct, None)
-        # Si el tag es invalido, decrypt() lanza excepcion
         return json.loads(data.decode())
-    except Exception as e:
-        print(f"Error de autenticacion/descifrado: {e}")
-        return {}  # No revelar detalles del error
+    except Exception as exc:
+        # 3) Clasificar errores (password incorrecta vs datos corruptos)
+        msg = str(exc)
+        if "authentication tag" in msg.lower():
+            return {
+                "error": "AUTH_FAILED",
+                "message": "Invalid password or vault data corrupted"
+            }
+        return {"error": "DECRYPT_ERROR", "message": msg}
 ```
+
+En esta nueva version, la integridad del vault se protege en **tres capas**:
+
+1. **Formato del blob**: si faltan campos o los hexadecimales no son validos,
+   se retorna `MALFORMED_DATA`.
+2. **Comparacion de salts**: si el `vault_salt` del servidor no coincide con el
+   salt local persistido, se retorna `TAMPERING_DETECTED` y se bloquea el
+   acceso.
+3. **Auth Tag de GCM**: si la clave derivada es incorrecta (por password
+   equivocada o datos modificados), GCM lanza una excepcion y se clasifica
+   como `AUTH_FAILED`.
 
 #### 5.2.3 Endpoint de Autenticacion Segura
 
@@ -554,7 +624,7 @@ def generate_password(length=16, use_uppercase=True,
 | Integridad | GCM Auth Tag (GHASH) | Implementado |
 | Resistencia Offline | Argon2id (64MB, 3 iter) | Implementado |
 | Autenticacion | JWT con HMAC-SHA256 | Implementado |
-| Secretos Locales | Pepper + Salt cliente | Implementado |
+| Secretos Locales | Pepper + vault_salt sincronizado | Implementado |
 
 ### 6.2 Analisis de Seguridad de la Clave Derivada
 
@@ -564,11 +634,10 @@ def generate_password(length=16, use_uppercase=True,
 Componentes de entrada:
 -------------------------------------------------------------
 Master Password:   Variable (~40-80 bits tipico)
-Server Salt:       128 bits (16 bytes aleatorios)
+Vault Salt:        256 bits (32 bytes rotativo generado por el cliente)
 Client Pepper:     256 bits (32 bytes aleatorios)
-Client Salt:       256 bits (32 bytes aleatorios)
 -------------------------------------------------------------
-Total entropia:    > 640 bits (sin contar password)
+Total entropia:    > 512 bits (sin contar password)
 ```
 
 #### Costo de Ataque de Fuerza Bruta
@@ -812,7 +881,7 @@ def login(request: Request, form_data: ...):
 | Criptografia Robusta | Uso de primitivas modernas y probadas (Argon2id, AES-256-GCM) |
 | Separacion de Responsabilidades | Cliente maneja toda la criptografia, servidor solo almacena blobs |
 | Autenticacion Segura | JWT con verificacion de firma |
-| Defensa en Profundidad | Multiples capas de secretos (password + pepper + salts) |
+| Defensa en Profundidad | Multiples capas de secretos (password + pepper + vault_salt) |
 | Interfaz Funcional | UI completa con PySide6 |
 
 ### 10.2 Trabajo Futuro y Mejoras Pendientes
@@ -838,7 +907,7 @@ def login(request: Request, form_data: ...):
 1. **La criptografia debe ser del lado del cliente** para lograr zero-knowledge
 2. **Argon2id** es superior a PBKDF2/bcrypt para KDF moderno
 3. **AEAD (GCM)** simplifica el cifrado al combinar confidencialidad e integridad
-4. **Los secretos locales** (pepper, client_salt) anaden seguridad contra robo de BD
+4. **Los secretos locales** (pepper y vault_salt sincronizado) anaden seguridad contra robo de BD
 5. **El manejo de nonces** es critico: nunca reutilizar (key, nonce)
 
 ---

@@ -678,9 +678,78 @@ class MainWindow(QMainWindow):
 
         def on_success(data):
             self.hide_loading()
+            
+            # Verificar si la respuesta contiene un error
+            if isinstance(data, dict) and "error" in data:
+                error_code = data.get("error")
+                error_message = data.get("message", "Error desconocido")
+                
+                # TAMPERING DETECTED: Máxima prioridad
+                if error_code == "TAMPERING_DETECTED":
+                    QMessageBox.critical(
+                        self, 
+                        "🚨 ALERTA DE SEGURIDAD CRÍTICA 🚨", 
+                        f"La integridad de tu bóveda ha sido comprometida.\n\n"
+                        f"Detalles: {error_message}\n\n"
+                        f"Tu bóveda ha sido detectada con un 'Salt Mismatch'.\n"
+                        f"Esto significa que los datos en el servidor no coinciden\n"
+                        f"con los datos originales almacenados localmente.\n\n"
+                        f"⚠️ NO intentes usar esta bóveda hasta investigar.\n"
+                        f"⚠️ Contacta al administrador del sistema."
+                    )
+                    self.statusBar().showMessage("🚨 TAMPERING DETECTADO - BÓVEDA BLOQUEADA", 10000)
+                    return
+                
+                # AUTH_FAILED: Contraseña incorrecta o datos alterados
+                if error_code == "AUTH_FAILED":
+                    QMessageBox.warning(
+                        self,
+                        "Contraseña Incorrecta",
+                        f"No se pudo desbloquear la bóveda.\n\n"
+                        f"Verifica que:\n"
+                        f"• Tu contraseña maestra es correcta\n"
+                        f"• La contraseña de acceso es correcta\n"
+                        f"• Los datos de la bóveda no han sido alterados"
+                    )
+                    self.statusBar().showMessage("Contraseña incorrecta o datos alterados.", 5000)
+                    return
+                
+                # MALFORMED_DATA: Datos corruptos
+                if error_code == "MALFORMED_DATA":
+                    QMessageBox.critical(
+                        self,
+                        "Datos Corruptos",
+                        f"La bóveda contiene datos corruptos o en formato inválido.\n\n"
+                        f"Detalles: {error_message}\n\n"
+                        f"Contacta al soporte técnico."
+                    )
+                    self.statusBar().showMessage("Datos corruptos en la bóveda.", 5000)
+                    return
+                
+                # NETWORK_ERROR: Error de conexión
+                if error_code == "NETWORK_ERROR":
+                    QMessageBox.warning(
+                        self,
+                        "Error de Conexión",
+                        f"No se pudo conectar al servidor.\n\n"
+                        f"Detalles: {error_message}"
+                    )
+                    self.statusBar().showMessage("Error de conexión al servidor.", 5000)
+                    return
+                
+                # Error genérico
+                QMessageBox.critical(
+                    self,
+                    "Error de Desencriptación",
+                    f"Error [{error_code}]: {error_message}"
+                )
+                self.statusBar().showMessage(f"Error: {error_code}", 5000)
+                return
+            
+            # Desencriptación exitosa
             if data is not None:
                 self._apply_vault_data(data)
-                self.statusBar().showMessage("Bóveda sincronizada correctamente.", 5000)
+                self.statusBar().showMessage("✓ Bóveda sincronizada correctamente.", 5000)
             else:
                 QMessageBox.critical(self, "Error", "Usuario o contraseña(s) incorrecta.")
                 self.statusBar().showMessage("No se pudo desbloquear la bóveda.", 5000)
